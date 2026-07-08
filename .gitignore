@@ -1,0 +1,8 @@
+.env
+
+ecommerce
+/tmp/
+bin/
+*.out
+*.exe
+*.test
