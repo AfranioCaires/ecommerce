@@ -1,0 +1,13 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+cmd = "go build -o ./tmp/ecommerce ./cmd/api"
+bin = "./tmp/ecommerce"
+include_ext = ["go", "toml", "env"]
+exclude_dir = ["tmp", "vendor"]
+delay = 300
+stop_on_error = true
+
+[log]
+time = true

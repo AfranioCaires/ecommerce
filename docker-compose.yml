@@ -1,0 +1,36 @@
+services:
+  postgresql:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: afraniocaires
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ecommerce
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgresql_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U afraniocaires -d ecommerce"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  application:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      APPLICATION_PORT: "3000"
+      APPLICATION_ENVIRONMENT: development
+      POSTGRESQL_DATA_SOURCE: host=postgresql port=5432 user=afraniocaires password=postgres dbname=ecommerce sslmode=disable
+      JSON_WEB_TOKEN_SECRET: RED-DEAD-REDEMPTION-2
+      JSON_WEB_TOKEN_ISSUER: afranio
+      JSON_WEB_TOKEN_LIFETIME: 15m
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgresql:
+        condition: service_healthy
+
+volumes:
+  postgresql_data:
