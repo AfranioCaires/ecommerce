@@ -25,6 +25,14 @@ func TestRouter(t *testing.T) {
 		}
 	})
 
+	t.Run("it should expose swagger documentation", func(t *testing.T) {
+		responseRecorder := httptest.NewRecorder()
+		router.ServeHTTP(responseRecorder, httptest.NewRequest(http.MethodGet, "/swagger/index.html", nil))
+		if responseRecorder.Code != http.StatusOK {
+			t.Fatalf("expected success, received %d", responseRecorder.Code)
+		}
+	})
+
 	for description, request := range map[string]*http.Request{
 		"it should protect product creation":  httptest.NewRequest(http.MethodPost, "/api/products", nil),
 		"it should protect inventory updates": httptest.NewRequest(http.MethodPut, "/api/inventory/product-1", nil),

@@ -1,0 +1,503 @@
+basePath: /
+definitions:
+  dto.AccessTokenResponse:
+    properties:
+      access_token:
+        type: string
+    type: object
+  dto.CheckoutItemRequest:
+    properties:
+      product_id:
+        type: string
+      quantity:
+        type: integer
+    type: object
+  dto.CheckoutItemResponse:
+    properties:
+      product_id:
+        type: string
+      product_name:
+        type: string
+      quantity:
+        type: integer
+      subtotal_cents:
+        type: integer
+      unit_price_cents:
+        type: integer
+    type: object
+  dto.CheckoutRequest:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/dto.CheckoutItemRequest'
+        type: array
+    type: object
+  dto.CheckoutResponse:
+    properties:
+      created_at:
+        type: string
+      items:
+        items:
+          $ref: '#/definitions/dto.CheckoutItemResponse'
+        type: array
+      order_id:
+        type: string
+      order_status:
+        type: string
+      payment_id:
+        type: string
+      payment_status:
+        type: string
+      total_amount_cents:
+        type: integer
+    type: object
+  dto.CreateProductRequest:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+      price_cents:
+        type: integer
+    type: object
+  dto.CredentialsRequest:
+    properties:
+      email:
+        type: string
+      password:
+        type: string
+    type: object
+  dto.OrderItemResponse:
+    properties:
+      product_id:
+        type: string
+      product_name:
+        type: string
+      quantity:
+        type: integer
+      subtotal_cents:
+        type: integer
+      unit_price_cents:
+        type: integer
+    type: object
+  dto.OrderResponse:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: string
+      items:
+        items:
+          $ref: '#/definitions/dto.OrderItemResponse'
+        type: array
+      status:
+        type: string
+      total_amount_cents:
+        type: integer
+      updated_at:
+        type: string
+      user_id:
+        type: string
+    type: object
+  dto.ProductPageResponse:
+    properties:
+      page_number:
+        type: integer
+      page_size:
+        type: integer
+      products:
+        items:
+          $ref: '#/definitions/dto.ProductResponse'
+        type: array
+      total_items:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  dto.ProductResponse:
+    properties:
+      created_at:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      price_cents:
+        type: integer
+      status:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  dto.SetStockRequest:
+    properties:
+      quantity:
+        type: integer
+    type: object
+  dto.StockResponse:
+    properties:
+      product_id:
+        type: string
+      quantity:
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  dto.UserResponse:
+    properties:
+      created_at:
+        type: string
+      email:
+        type: string
+      id:
+        type: string
+      roles:
+        items:
+          type: string
+        type: array
+    type: object
+  httpresponse.ErrorResponse:
+    properties:
+      error:
+        type: string
+    type: object
+  httpresponse.HealthResponse:
+    properties:
+      status:
+        type: string
+    type: object
+info:
+  contact: {}
+  description: Modular e-commerce API for authentication, catalog, inventory, checkout,
+    and orders.
+  title: Mini E-commerce API
+  version: "1.0"
+paths:
+  /api/authentication/login:
+    post:
+      consumes:
+      - application/json
+      description: Returns a JWT access token for valid credentials.
+      parameters:
+      - description: Customer credentials
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.CredentialsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.AccessTokenResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/httpresponse.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/httpresponse.ErrorResponse'
+      summary: Authenticate a customer
+      tags:
+      - Authentication
+  /api/authentication/register:
+    post:
+      consumes:
+      - application/json
+      description: Creates a customer account.
+      parameters:
+      - description: Customer credentials
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.CredentialsRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.UserResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/httpresponse.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/httpresponse.ErrorResponse'
+      summary: Register a customer
+      tags:
+      - Authentication
+  /api/inventory/{productID}:
+    put:
+      consumes:
+      - application/json
+      description: Replaces the available quantity for a product. Administrator access
+        is required.
+      parameters:
+      - description: Product ID
+        in: path
+        name: productID
+        required: true
+        type: string
+      - description: Stock data
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.SetStockRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.StockResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/httpresponse.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/httpresponse.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/httpresponse.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Set product stock
+      tags:
+      - Inventory
+  /api/orders:
+    get:
+      description: Returns owned orders or every order for an administrator or support
+        user.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.OrderResponse'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/httpresponse.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/httpresponse.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List orders
+      tags:
+      - Orders
+    post:
+      consumes:
+      - application/json
+      description: Reserves stock, creates an order, and processes its simulated payment
+        in one transaction.
+      parameters:
+      - description: Checkout items
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.CheckoutRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.CheckoutResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/httpresponse.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/httpresponse.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/httpresponse.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/httpresponse.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create an order
+      tags:
+      - Orders
+  /api/orders/{orderID}:
+    get:
+      description: Returns an owned order or any order for an administrator or support
+        user.
+      parameters:
+      - description: Order ID
+        in: path
+        name: orderID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.OrderResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/httpresponse.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/httpresponse.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/httpresponse.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/httpresponse.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get an order
+      tags:
+      - Orders
+  /api/products:
+    get:
+      description: Returns a paginated list of active products.
+      parameters:
+      - default: 1
+        description: Page number
+        in: query
+        minimum: 1
+        name: page
+        type: integer
+      - default: 20
+        description: Page size
+        in: query
+        maximum: 100
+        minimum: 1
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ProductPageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/httpresponse.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/httpresponse.ErrorResponse'
+      summary: List products
+      tags:
+      - Catalog
+    post:
+      consumes:
+      - application/json
+      description: Creates an active catalog product. Administrator access is required.
+      parameters:
+      - description: Product data
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.CreateProductRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.ProductResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/httpresponse.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/httpresponse.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/httpresponse.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create a product
+      tags:
+      - Catalog
+  /api/products/{productID}:
+    get:
+      description: Returns a catalog product by ID.
+      parameters:
+      - description: Product ID
+        in: path
+        name: productID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ProductResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/httpresponse.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/httpresponse.ErrorResponse'
+      summary: Get a product
+      tags:
+      - Catalog
+  /health:
+    get:
+      description: Returns the current application health status.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/httpresponse.HealthResponse'
+      summary: Get application health
+      tags:
+      - Health
+schemes:
+- http
+- https
+securityDefinitions:
+  BearerAuth:
+    description: 'Enter the access token using the Bearer scheme: Bearer {token}'
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

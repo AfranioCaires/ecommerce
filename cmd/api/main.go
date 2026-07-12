@@ -29,6 +29,15 @@ import (
 	"github.com/afraniocaires/ecommerce/internal/platform/transaction"
 )
 
+// @title Mini E-commerce API
+// @version 1.0
+// @description Modular e-commerce API for authentication, catalog, inventory, checkout, and orders.
+// @BasePath /
+// @schemes http https
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description Enter the access token using the Bearer scheme: Bearer {token}
 func main() {
 	applicationConfiguration, errorValue := configuration.Load()
 	if errorValue != nil {

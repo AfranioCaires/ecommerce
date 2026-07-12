@@ -19,6 +19,20 @@ func NewHandler(inventoryService *usecase.InventoryService) *Handler {
 	return &Handler{inventoryService: inventoryService}
 }
 
+// SetQuantity godoc
+// @Summary Set product stock
+// @Description Replaces the available quantity for a product. Administrator access is required.
+// @Tags Inventory
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param productID path string true "Product ID"
+// @Param request body dto.SetStockRequest true "Stock data"
+// @Success 200 {object} dto.StockResponse
+// @Failure 400 {object} httpresponse.ErrorResponse
+// @Failure 401 {object} httpresponse.ErrorResponse
+// @Failure 403 {object} httpresponse.ErrorResponse
+// @Router /api/inventory/{productID} [put]
 func (handler *Handler) SetQuantity(context *gin.Context) {
 	var request dto.SetStockRequest
 

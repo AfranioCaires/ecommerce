@@ -24,6 +24,20 @@ func NewHandler(
 	return &Handler{checkoutUseCase: checkoutUseCase}
 }
 
+// Checkout godoc
+// @Summary Create an order
+// @Description Reserves stock, creates an order, and processes its simulated payment in one transaction.
+// @Tags Orders
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body dto.CheckoutRequest true "Checkout items"
+// @Success 201 {object} dto.CheckoutResponse
+// @Failure 400 {object} httpresponse.ErrorResponse
+// @Failure 401 {object} httpresponse.ErrorResponse
+// @Failure 404 {object} httpresponse.ErrorResponse
+// @Failure 409 {object} httpresponse.ErrorResponse
+// @Router /api/orders [post]
 func (handler *Handler) Checkout(context *gin.Context) {
 	userID, available := middleware.UserID(context)
 	if !available {

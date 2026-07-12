@@ -3,6 +3,7 @@ package ordertransport
 import (
 	"errors"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -33,6 +34,19 @@ func NewHandler(
 	}
 }
 
+// GetByID godoc
+// @Summary Get an order
+// @Description Returns an owned order or any order for an administrator or support user.
+// @Tags Orders
+// @Produce json
+// @Security BearerAuth
+// @Param orderID path string true "Order ID"
+// @Success 200 {object} dto.OrderResponse
+// @Failure 401 {object} httpresponse.ErrorResponse
+// @Failure 403 {object} httpresponse.ErrorResponse
+// @Failure 404 {object} httpresponse.ErrorResponse
+// @Failure 500 {object} httpresponse.ErrorResponse
+// @Router /api/orders/{orderID} [get]
 func (handler *Handler) GetByID(context *gin.Context) {
 	authenticatedUserID, available := middleware.UserID(context)
 	if !available {
@@ -70,6 +84,16 @@ func (handler *Handler) GetByID(context *gin.Context) {
 	context.JSON(http.StatusOK, toOrderResponse(order))
 }
 
+// List godoc
+// @Summary List orders
+// @Description Returns owned orders or every order for an administrator or support user.
+// @Tags Orders
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {array} dto.OrderResponse
+// @Failure 401 {object} httpresponse.ErrorResponse
+// @Failure 500 {object} httpresponse.ErrorResponse
+// @Router /api/orders [get]
 func (handler *Handler) List(context *gin.Context) {
 	authenticatedUserID, available := middleware.UserID(context)
 	if !available {
@@ -114,10 +138,8 @@ func (handler *Handler) List(context *gin.Context) {
 
 func containsAnyRole(authenticatedRoles []string, requiredRoles ...string) bool {
 	for _, authenticatedRole := range authenticatedRoles {
-		for _, requiredRole := range requiredRoles {
-			if authenticatedRole == requiredRole {
-				return true
-			}
+		if slices.Contains(requiredRoles, authenticatedRole) {
+			return true
 		}
 	}
 

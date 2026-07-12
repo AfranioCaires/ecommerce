@@ -28,6 +28,17 @@ func NewHandler(
 	}
 }
 
+// Register godoc
+// @Summary Register a customer
+// @Description Creates a customer account.
+// @Tags Authentication
+// @Accept json
+// @Produce json
+// @Param request body dto.CredentialsRequest true "Customer credentials"
+// @Success 201 {object} dto.UserResponse
+// @Failure 400 {object} httpresponse.ErrorResponse
+// @Failure 409 {object} httpresponse.ErrorResponse
+// @Router /api/authentication/register [post]
 func (handler *Handler) Register(context *gin.Context) {
 	var request dto.CredentialsRequest
 
@@ -69,6 +80,17 @@ func (handler *Handler) Register(context *gin.Context) {
 	)
 }
 
+// Login godoc
+// @Summary Authenticate a customer
+// @Description Returns a JWT access token for valid credentials.
+// @Tags Authentication
+// @Accept json
+// @Produce json
+// @Param request body dto.CredentialsRequest true "Customer credentials"
+// @Success 200 {object} dto.AccessTokenResponse
+// @Failure 400 {object} httpresponse.ErrorResponse
+// @Failure 401 {object} httpresponse.ErrorResponse
+// @Router /api/authentication/login [post]
 func (handler *Handler) Login(context *gin.Context) {
 	var request dto.CredentialsRequest
 

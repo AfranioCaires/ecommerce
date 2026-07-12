@@ -2,8 +2,11 @@ package main
 
 import (
 	"github.com/gin-gonic/gin"
+	swaggerfiles "github.com/swaggo/files"
+	ginswagger "github.com/swaggo/gin-swagger"
 
 	"github.com/afraniocaires/ecommerce/cmd/api/routes"
+	_ "github.com/afraniocaires/ecommerce/docs/swagger"
 	authenticationtransport "github.com/afraniocaires/ecommerce/internal/authentication/adapter/http"
 	catalogtransport "github.com/afraniocaires/ecommerce/internal/catalog/adapter/http"
 	checkouttransport "github.com/afraniocaires/ecommerce/internal/checkout/adapter/http"
@@ -24,6 +27,7 @@ func newRouter(
 	router := gin.New()
 	router.Use(gin.Logger(), gin.Recovery())
 	router.GET("/health", httpresponse.Health)
+	router.GET("/swagger/*any", ginswagger.WrapHandler(swaggerfiles.Handler))
 
 	apiRoutes := router.Group("/api")
 	routes.RegisterAuthenticationRoutes(apiRoutes, authenticationHandler)

@@ -32,6 +32,19 @@ func NewHandler(
 	}
 }
 
+// Create godoc
+// @Summary Create a product
+// @Description Creates an active catalog product. Administrator access is required.
+// @Tags Catalog
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body dto.CreateProductRequest true "Product data"
+// @Success 201 {object} dto.ProductResponse
+// @Failure 400 {object} httpresponse.ErrorResponse
+// @Failure 401 {object} httpresponse.ErrorResponse
+// @Failure 403 {object} httpresponse.ErrorResponse
+// @Router /api/products [post]
 func (handler *Handler) Create(context *gin.Context) {
 	var request dto.CreateProductRequest
 
@@ -56,6 +69,16 @@ func (handler *Handler) Create(context *gin.Context) {
 	context.JSON(http.StatusCreated, toProductResponse(product))
 }
 
+// GetByID godoc
+// @Summary Get a product
+// @Description Returns a catalog product by ID.
+// @Tags Catalog
+// @Produce json
+// @Param productID path string true "Product ID"
+// @Success 200 {object} dto.ProductResponse
+// @Failure 404 {object} httpresponse.ErrorResponse
+// @Failure 500 {object} httpresponse.ErrorResponse
+// @Router /api/products/{productID} [get]
 func (handler *Handler) GetByID(context *gin.Context) {
 	productID := context.Param("productID")
 
@@ -76,6 +99,17 @@ func (handler *Handler) GetByID(context *gin.Context) {
 	context.JSON(http.StatusOK, toProductResponse(product))
 }
 
+// List godoc
+// @Summary List products
+// @Description Returns a paginated list of active products.
+// @Tags Catalog
+// @Produce json
+// @Param page query int false "Page number" default(1) minimum(1)
+// @Param page_size query int false "Page size" default(20) minimum(1) maximum(100)
+// @Success 200 {object} dto.ProductPageResponse
+// @Failure 400 {object} httpresponse.ErrorResponse
+// @Failure 500 {object} httpresponse.ErrorResponse
+// @Router /api/products [get]
 func (handler *Handler) List(context *gin.Context) {
 	pageNumber, errorValue := integerQueryValue(context, "page", usecase.DefaultPageNumber)
 	if errorValue != nil {
