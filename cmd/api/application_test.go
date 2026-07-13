@@ -77,7 +77,7 @@ func (repository *applicationOrderRepository) FindByID(applicationContext contex
 	}
 	return order, nil
 }
-func (repository *applicationOrderRepository) FindByUserID(applicationContext context.Context, userID string) ([]*orderdomain.Order, error) {
+func (repository *applicationOrderRepository) FindByUserID(applicationContext context.Context, userID string, pageRequest orderusecase.OrderPageRequest) ([]*orderdomain.Order, error) {
 	orders := make([]*orderdomain.Order, 0)
 	for _, order := range repository.orders {
 		if order.UserID == userID {
@@ -86,7 +86,7 @@ func (repository *applicationOrderRepository) FindByUserID(applicationContext co
 	}
 	return orders, nil
 }
-func (repository *applicationOrderRepository) FindAll(applicationContext context.Context) ([]*orderdomain.Order, error) {
+func (repository *applicationOrderRepository) FindAll(applicationContext context.Context, pageRequest orderusecase.OrderPageRequest) ([]*orderdomain.Order, error) {
 	orders := make([]*orderdomain.Order, 0, len(repository.orders))
 	for _, order := range repository.orders {
 		orders = append(orders, order)

@@ -18,6 +18,7 @@ func NewListAllOrdersUseCase(
 
 func (useCase *ListAllOrdersUseCase) Execute(
 	context context.Context,
+	pageRequest OrderPageRequest,
 ) ([]*domain.Order, error) {
-	return useCase.orderRepository.FindAll(context)
+	return useCase.orderRepository.FindAll(context, pageRequest)
 }

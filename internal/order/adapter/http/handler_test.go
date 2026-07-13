@@ -17,7 +17,8 @@ import (
 )
 
 type orderRepository struct {
-	orders []*orderdomain.Order
+	orders      []*orderdomain.Order
+	pageRequest orderusecase.OrderPageRequest
 }
 
 func (repository *orderRepository) Save(applicationContext context.Context, order *orderdomain.Order) error {
@@ -35,7 +36,8 @@ func (repository *orderRepository) FindByID(applicationContext context.Context, 
 	}
 	return nil, orderdomain.ErrOrderNotFound
 }
-func (repository *orderRepository) FindByUserID(applicationContext context.Context, userID string) ([]*orderdomain.Order, error) {
+func (repository *orderRepository) FindByUserID(applicationContext context.Context, userID string, pageRequest orderusecase.OrderPageRequest) ([]*orderdomain.Order, error) {
+	repository.pageRequest = pageRequest
 	orders := make([]*orderdomain.Order, 0)
 	for _, order := range repository.orders {
 		if order.UserID == userID {
@@ -44,7 +46,8 @@ func (repository *orderRepository) FindByUserID(applicationContext context.Conte
 	}
 	return orders, nil
 }
-func (repository *orderRepository) FindAll(applicationContext context.Context) ([]*orderdomain.Order, error) {
+func (repository *orderRepository) FindAll(applicationContext context.Context, pageRequest orderusecase.OrderPageRequest) ([]*orderdomain.Order, error) {
+	repository.pageRequest = pageRequest
 	return repository.orders, nil
 }
 
@@ -78,6 +81,28 @@ func TestHandler(t *testing.T) {
 		router.ServeHTTP(responseRecorder, request)
 		if responseRecorder.Code != http.StatusForbidden {
 			t.Fatalf("expected forbidden, received %d", responseRecorder.Code)
+		}
+	})
+
+	t.Run("it should apply explicit order pagination", func(t *testing.T) {
+		accessToken, _ := accessTokenManager.Generate("user-1", []authenticationdomain.Role{authenticationdomain.RoleCustomer}, time.Now())
+		request := httptest.NewRequest(http.MethodGet, "/orders?limit=10&offset=5", nil)
+		request.Header.Set("Authorization", "Bearer "+accessToken)
+		responseRecorder := httptest.NewRecorder()
+		router.ServeHTTP(responseRecorder, request)
+		if responseRecorder.Code != http.StatusOK || repository.pageRequest.Limit != 10 || repository.pageRequest.Offset != 5 {
+			t.Fatalf("unexpected pagination: %#v, status %d", repository.pageRequest, responseRecorder.Code)
+		}
+	})
+
+	t.Run("it should reject invalid order pagination", func(t *testing.T) {
+		accessToken, _ := accessTokenManager.Generate("user-1", []authenticationdomain.Role{authenticationdomain.RoleCustomer}, time.Now())
+		request := httptest.NewRequest(http.MethodGet, "/orders?limit=101&offset=-1", nil)
+		request.Header.Set("Authorization", "Bearer "+accessToken)
+		responseRecorder := httptest.NewRecorder()
+		router.ServeHTTP(responseRecorder, request)
+		if responseRecorder.Code != http.StatusBadRequest {
+			t.Fatalf("expected bad request, received %d", responseRecorder.Code)
 		}
 	})
 }

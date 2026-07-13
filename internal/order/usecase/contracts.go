@@ -13,6 +13,10 @@ type OrderRepository interface {
 	FindByUserID(
 		context context.Context,
 		userID string,
+		pageRequest OrderPageRequest,
 	) ([]*domain.Order, error)
-	FindAll(context context.Context) ([]*domain.Order, error)
+	FindAll(
+		context context.Context,
+		pageRequest OrderPageRequest,
+	) ([]*domain.Order, error)
 }

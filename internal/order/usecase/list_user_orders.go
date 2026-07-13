@@ -19,6 +19,7 @@ func NewListUserOrdersUseCase(
 func (useCase *ListUserOrdersUseCase) Execute(
 	context context.Context,
 	userID string,
+	pageRequest OrderPageRequest,
 ) ([]*domain.Order, error) {
-	return useCase.orderRepository.FindByUserID(context, userID)
+	return useCase.orderRepository.FindByUserID(context, userID, pageRequest)
 }

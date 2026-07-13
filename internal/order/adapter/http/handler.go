@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"slices"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -90,7 +91,10 @@ func (handler *Handler) GetByID(context *gin.Context) {
 // @Tags Orders
 // @Produce json
 // @Security BearerAuth
+// @Param limit query int false "Maximum number of orders" default(20) minimum(1) maximum(100)
+// @Param offset query int false "Number of orders to skip" default(0) minimum(0)
 // @Success 200 {array} dto.OrderResponse
+// @Failure 400 {object} httpresponse.ErrorResponse
 // @Failure 401 {object} httpresponse.ErrorResponse
 // @Failure 500 {object} httpresponse.ErrorResponse
 // @Router /api/orders [get]
@@ -103,6 +107,24 @@ func (handler *Handler) List(context *gin.Context) {
 
 	authenticatedRoles, _ := middleware.Roles(context)
 
+	limit, errorValue := orderQueryValue(context, "limit", orderusecase.DefaultOrderLimit)
+	if errorValue != nil {
+		context.JSON(http.StatusBadRequest, httpresponse.ErrorResponse{Error: orderusecase.ErrInvalidOrderPagination.Error()})
+		return
+	}
+
+	offset, errorValue := orderQueryValue(context, "offset", orderusecase.DefaultOrderOffset)
+	if errorValue != nil {
+		context.JSON(http.StatusBadRequest, httpresponse.ErrorResponse{Error: orderusecase.ErrInvalidOrderPagination.Error()})
+		return
+	}
+
+	pageRequest, errorValue := orderusecase.NewOrderPageRequest(limit, offset)
+	if errorValue != nil {
+		context.JSON(http.StatusBadRequest, httpresponse.ErrorResponse{Error: errorValue.Error()})
+		return
+	}
+
 	canReadEveryOrder := containsAnyRole(
 		authenticatedRoles,
 		string(authenticationdomain.RoleAdministrator),
@@ -110,16 +132,18 @@ func (handler *Handler) List(context *gin.Context) {
 	)
 
 	var orders []*orderdomain.Order
-	var errorValue error
+	errorValue = nil
 
 	if canReadEveryOrder {
 		orders, errorValue = handler.listAllOrdersUseCase.Execute(
 			context.Request.Context(),
+			pageRequest,
 		)
 	} else {
 		orders, errorValue = handler.listUserOrdersUseCase.Execute(
 			context.Request.Context(),
 			authenticatedUserID,
+			pageRequest,
 		)
 	}
 
@@ -134,6 +158,15 @@ func (handler *Handler) List(context *gin.Context) {
 	}
 
 	context.JSON(http.StatusOK, orderResponses)
+}
+
+func orderQueryValue(context *gin.Context, name string, fallback int) (int, error) {
+	value := context.Query(name)
+	if value == "" {
+		return fallback, nil
+	}
+
+	return strconv.Atoi(value)
 }
 
 func containsAnyRole(authenticatedRoles []string, requiredRoles ...string) bool {

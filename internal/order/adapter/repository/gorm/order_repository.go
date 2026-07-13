@@ -82,18 +82,21 @@ func (repository *OrderRepository) FindByID(
 func (repository *OrderRepository) FindByUserID(
 	context context.Context,
 	userID string,
+	pageRequest usecase.OrderPageRequest,
 ) ([]*domain.Order, error) {
-	return repository.findMany(context, "user_id = ?", userID)
+	return repository.findMany(context, pageRequest, "user_id = ?", userID)
 }
 
 func (repository *OrderRepository) FindAll(
 	context context.Context,
+	pageRequest usecase.OrderPageRequest,
 ) ([]*domain.Order, error) {
-	return repository.findMany(context, "1 = 1")
+	return repository.findMany(context, pageRequest, "1 = 1")
 }
 
 func (repository *OrderRepository) findMany(
 	context context.Context,
+	pageRequest usecase.OrderPageRequest,
 	condition string,
 	arguments ...any,
 ) ([]*domain.Order, error) {
@@ -108,6 +111,8 @@ func (repository *OrderRepository) findMany(
 		Preload("Items").
 		Where(condition, arguments...).
 		Order("created_at DESC").
+		Limit(pageRequest.Limit).
+		Offset(pageRequest.Offset).
 		Find(&orderModels).
 		Error
 	if errorValue != nil {

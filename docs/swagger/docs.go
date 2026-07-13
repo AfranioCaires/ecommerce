@@ -186,6 +186,25 @@ const docTemplate = `{
                     "Orders"
                 ],
                 "summary": "List orders",
+                "parameters": [
+                    {
+                        "maximum": 100,
+                        "minimum": 1,
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Maximum number of orders",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Number of orders to skip",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -194,6 +213,12 @@ const docTemplate = `{
                             "items": {
                                 "$ref": "#/definitions/dto.OrderResponse"
                             }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/httpresponse.ErrorResponse"
                         }
                     },
                     "401": {
