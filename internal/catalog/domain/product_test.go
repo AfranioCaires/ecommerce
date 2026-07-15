@@ -33,3 +33,31 @@ func TestNewProduct(t *testing.T) {
 		})
 	}
 }
+
+func TestRestoreProduct(t *testing.T) {
+	createdAt := time.Date(2026, 7, 12, 12, 0, 0, 0, time.FixedZone("created", -10800))
+	updatedAt := createdAt.Add(time.Hour)
+	product, errorValue := RestoreProduct("product-1", " Keyboard ", " Mechanical ", 10000, ProductStatusInactive, createdAt, updatedAt)
+	if errorValue != nil || product.Status != ProductStatusInactive || product.UpdatedAt.Location() != time.UTC {
+		t.Fatalf("unexpected restored product: %#v, %v", product, errorValue)
+	}
+
+	if _, errorValue = RestoreProduct("", "Product", "", 100, ProductStatusActive, createdAt, updatedAt); !errors.Is(errorValue, ErrEmptyProductID) {
+		t.Fatalf("expected product validation error, received %v", errorValue)
+	}
+	if _, errorValue = RestoreProduct("product-1", "Product", "", 100, ProductStatus("UNKNOWN"), createdAt, updatedAt); !errors.Is(errorValue, ErrInvalidProductStatus) {
+		t.Fatalf("expected invalid status, received %v", errorValue)
+	}
+}
+
+func TestProductStatusIsValid(t *testing.T) {
+	for status, expected := range map[ProductStatus]bool{
+		ProductStatusActive:    true,
+		ProductStatusInactive:  true,
+		ProductStatus("OTHER"): false,
+	} {
+		if status.IsValid() != expected {
+			t.Fatalf("expected validity of %q to be %t", status, expected)
+		}
+	}
+}

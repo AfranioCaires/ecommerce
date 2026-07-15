@@ -2,6 +2,8 @@ package ordertransport
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -19,16 +21,19 @@ import (
 type orderRepository struct {
 	orders      []*orderdomain.Order
 	pageRequest orderusecase.OrderPageRequest
+	findError   error
+	method      string
 }
 
-func (repository *orderRepository) Save(applicationContext context.Context, order *orderdomain.Order) error {
-	repository.orders = append(repository.orders, order)
+func (repository *orderRepository) Save(context.Context, *orderdomain.Order) error { return nil }
+func (repository *orderRepository) UpdateStatus(context.Context, *orderdomain.Order) error {
 	return nil
 }
-func (repository *orderRepository) UpdateStatus(applicationContext context.Context, order *orderdomain.Order) error {
-	return nil
-}
-func (repository *orderRepository) FindByID(applicationContext context.Context, orderID string) (*orderdomain.Order, error) {
+func (repository *orderRepository) FindByID(_ context.Context, orderID string) (*orderdomain.Order, error) {
+	repository.method = "FindByID"
+	if repository.findError != nil {
+		return nil, repository.findError
+	}
 	for _, order := range repository.orders {
 		if order.ID == orderID {
 			return order, nil
@@ -36,8 +41,11 @@ func (repository *orderRepository) FindByID(applicationContext context.Context, 
 	}
 	return nil, orderdomain.ErrOrderNotFound
 }
-func (repository *orderRepository) FindByUserID(applicationContext context.Context, userID string, pageRequest orderusecase.OrderPageRequest) ([]*orderdomain.Order, error) {
-	repository.pageRequest = pageRequest
+func (repository *orderRepository) FindByUserID(_ context.Context, userID string, pageRequest orderusecase.OrderPageRequest) ([]*orderdomain.Order, error) {
+	repository.method, repository.pageRequest = "FindByUserID", pageRequest
+	if repository.findError != nil {
+		return nil, repository.findError
+	}
 	orders := make([]*orderdomain.Order, 0)
 	for _, order := range repository.orders {
 		if order.UserID == userID {
@@ -46,63 +54,108 @@ func (repository *orderRepository) FindByUserID(applicationContext context.Conte
 	}
 	return orders, nil
 }
-func (repository *orderRepository) FindAll(applicationContext context.Context, pageRequest orderusecase.OrderPageRequest) ([]*orderdomain.Order, error) {
-	repository.pageRequest = pageRequest
+func (repository *orderRepository) FindAll(_ context.Context, pageRequest orderusecase.OrderPageRequest) ([]*orderdomain.Order, error) {
+	repository.method, repository.pageRequest = "FindAll", pageRequest
+	if repository.findError != nil {
+		return nil, repository.findError
+	}
 	return repository.orders, nil
+}
+
+func orderRouter(repository *orderRepository, userID string, roles []authenticationdomain.Role, authenticated bool) (*gin.Engine, string) {
+	handler := NewHandler(
+		orderusecase.NewGetOrderUseCase(repository),
+		orderusecase.NewListUserOrdersUseCase(repository),
+		orderusecase.NewListAllOrdersUseCase(repository),
+	)
+	router := gin.New()
+	token := ""
+	if authenticated {
+		manager := security.NewJSONWebTokenManager("secret", "ecommerce", time.Hour)
+		token, _ = manager.Generate(userID, roles, time.Now())
+		router.Use(middleware.RequireAuthentication(manager))
+	}
+	router.GET("/orders", handler.List)
+	router.GET("/orders/:orderID", handler.GetByID)
+	return router, token
+}
+
+func performOrderRequest(router *gin.Engine, token, path string) *httptest.ResponseRecorder {
+	request := httptest.NewRequest(http.MethodGet, path, nil)
+	if token != "" {
+		request.Header.Set("Authorization", "Bearer "+token)
+	}
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	return response
 }
 
 func TestHandler(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	order, _ := orderdomain.NewOrder("order-1", "user-1", []orderdomain.OrderItem{{ProductID: "product-1", ProductName: "Keyboard", UnitPriceCents: 100, Quantity: 1}}, time.Now())
-	repository := &orderRepository{orders: []*orderdomain.Order{order}}
-	handler := NewHandler(orderusecase.NewGetOrderUseCase(repository), orderusecase.NewListUserOrdersUseCase(repository), orderusecase.NewListAllOrdersUseCase(repository))
-	accessTokenManager := security.NewJSONWebTokenManager("secret", "ecommerce", time.Hour)
-	router := gin.New()
-	router.Use(middleware.RequireAuthentication(accessTokenManager))
-	router.GET("/orders", handler.List)
-	router.GET("/orders/:orderID", handler.GetByID)
+	createdAt := time.Date(2026, time.July, 15, 12, 0, 0, 0, time.UTC)
+	order, _ := orderdomain.NewOrder("order-1", "user-1", []orderdomain.OrderItem{{ProductID: "product-1", ProductName: "Keyboard", UnitPriceCents: 100, Quantity: 2}}, createdAt)
+	dependencyError := errors.New("dependency failed")
 
-	t.Run("it should allow a customer to read an owned order", func(t *testing.T) {
-		accessToken, _ := accessTokenManager.Generate("user-1", []authenticationdomain.Role{authenticationdomain.RoleCustomer}, time.Now())
-		request := httptest.NewRequest(http.MethodGet, "/orders/order-1", nil)
-		request.Header.Set("Authorization", "Bearer "+accessToken)
-		responseRecorder := httptest.NewRecorder()
-		router.ServeHTTP(responseRecorder, request)
-		if responseRecorder.Code != http.StatusOK {
-			t.Fatalf("expected success, received %d", responseRecorder.Code)
-		}
-	})
+	for _, testCase := range []struct {
+		name          string
+		path          string
+		userID        string
+		roles         []authenticationdomain.Role
+		authenticated bool
+		repository    *orderRepository
+		wantStatus    int
+		wantMethod    string
+	}{
+		{name: "get requires identity", path: "/orders/order-1", repository: &orderRepository{orders: []*orderdomain.Order{order}}, wantStatus: http.StatusUnauthorized},
+		{name: "get maps not found", path: "/orders/missing", userID: "user-1", roles: []authenticationdomain.Role{authenticationdomain.RoleCustomer}, authenticated: true, repository: &orderRepository{orders: []*orderdomain.Order{order}}, wantStatus: http.StatusNotFound, wantMethod: "FindByID"},
+		{name: "get maps repository failure", path: "/orders/order-1", userID: "user-1", roles: []authenticationdomain.Role{authenticationdomain.RoleCustomer}, authenticated: true, repository: &orderRepository{findError: dependencyError}, wantStatus: http.StatusInternalServerError, wantMethod: "FindByID"},
+		{name: "get forbids another customer", path: "/orders/order-1", userID: "user-2", roles: []authenticationdomain.Role{authenticationdomain.RoleCustomer}, authenticated: true, repository: &orderRepository{orders: []*orderdomain.Order{order}}, wantStatus: http.StatusForbidden, wantMethod: "FindByID"},
+		{name: "get permits owner", path: "/orders/order-1", userID: "user-1", roles: []authenticationdomain.Role{authenticationdomain.RoleCustomer}, authenticated: true, repository: &orderRepository{orders: []*orderdomain.Order{order}}, wantStatus: http.StatusOK, wantMethod: "FindByID"},
+		{name: "get permits support", path: "/orders/order-1", userID: "user-2", roles: []authenticationdomain.Role{authenticationdomain.RoleSupport}, authenticated: true, repository: &orderRepository{orders: []*orderdomain.Order{order}}, wantStatus: http.StatusOK, wantMethod: "FindByID"},
+		{name: "list requires identity", path: "/orders", repository: &orderRepository{}, wantStatus: http.StatusUnauthorized},
+		{name: "list rejects invalid limit string", path: "/orders?limit=x", userID: "user-1", roles: []authenticationdomain.Role{authenticationdomain.RoleCustomer}, authenticated: true, repository: &orderRepository{}, wantStatus: http.StatusBadRequest},
+		{name: "list rejects invalid offset string", path: "/orders?offset=x", userID: "user-1", roles: []authenticationdomain.Role{authenticationdomain.RoleCustomer}, authenticated: true, repository: &orderRepository{}, wantStatus: http.StatusBadRequest},
+		{name: "list rejects invalid values", path: "/orders?limit=101", userID: "user-1", roles: []authenticationdomain.Role{authenticationdomain.RoleCustomer}, authenticated: true, repository: &orderRepository{}, wantStatus: http.StatusBadRequest},
+		{name: "list owned orders with defaults", path: "/orders", userID: "user-1", roles: []authenticationdomain.Role{authenticationdomain.RoleCustomer}, authenticated: true, repository: &orderRepository{orders: []*orderdomain.Order{order}}, wantStatus: http.StatusOK, wantMethod: "FindByUserID"},
+		{name: "list all orders for administrator", path: "/orders?limit=10&offset=5", userID: "admin-1", roles: []authenticationdomain.Role{authenticationdomain.RoleAdministrator}, authenticated: true, repository: &orderRepository{orders: []*orderdomain.Order{order}}, wantStatus: http.StatusOK, wantMethod: "FindAll"},
+		{name: "list maps repository failure", path: "/orders", userID: "support-1", roles: []authenticationdomain.Role{authenticationdomain.RoleSupport}, authenticated: true, repository: &orderRepository{findError: dependencyError}, wantStatus: http.StatusInternalServerError, wantMethod: "FindAll"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			router, token := orderRouter(testCase.repository, testCase.userID, testCase.roles, testCase.authenticated)
+			response := performOrderRequest(router, token, testCase.path)
+			if response.Code != testCase.wantStatus || testCase.repository.method != testCase.wantMethod {
+				t.Fatalf("status = %d, body = %s, method = %q", response.Code, response.Body.String(), testCase.repository.method)
+			}
+			if testCase.name == "list owned orders with defaults" && testCase.repository.pageRequest != (orderusecase.OrderPageRequest{Limit: 20, Offset: 0}) {
+				t.Fatalf("page request = %#v", testCase.repository.pageRequest)
+			}
+			if testCase.name == "list all orders for administrator" && testCase.repository.pageRequest != (orderusecase.OrderPageRequest{Limit: 10, Offset: 5}) {
+				t.Fatalf("page request = %#v", testCase.repository.pageRequest)
+			}
+			if response.Code == http.StatusOK {
+				var value any
+				if err := json.Unmarshal(response.Body.Bytes(), &value); err != nil {
+					t.Fatalf("invalid response JSON: %v", err)
+				}
+			}
+		})
+	}
+}
 
-	t.Run("it should reject another customer order", func(t *testing.T) {
-		accessToken, _ := accessTokenManager.Generate("user-2", []authenticationdomain.Role{authenticationdomain.RoleCustomer}, time.Now())
-		request := httptest.NewRequest(http.MethodGet, "/orders/order-1", nil)
-		request.Header.Set("Authorization", "Bearer "+accessToken)
-		responseRecorder := httptest.NewRecorder()
-		router.ServeHTTP(responseRecorder, request)
-		if responseRecorder.Code != http.StatusForbidden {
-			t.Fatalf("expected forbidden, received %d", responseRecorder.Code)
-		}
-	})
-
-	t.Run("it should apply explicit order pagination", func(t *testing.T) {
-		accessToken, _ := accessTokenManager.Generate("user-1", []authenticationdomain.Role{authenticationdomain.RoleCustomer}, time.Now())
-		request := httptest.NewRequest(http.MethodGet, "/orders?limit=10&offset=5", nil)
-		request.Header.Set("Authorization", "Bearer "+accessToken)
-		responseRecorder := httptest.NewRecorder()
-		router.ServeHTTP(responseRecorder, request)
-		if responseRecorder.Code != http.StatusOK || repository.pageRequest.Limit != 10 || repository.pageRequest.Offset != 5 {
-			t.Fatalf("unexpected pagination: %#v, status %d", repository.pageRequest, responseRecorder.Code)
-		}
-	})
-
-	t.Run("it should reject invalid order pagination", func(t *testing.T) {
-		accessToken, _ := accessTokenManager.Generate("user-1", []authenticationdomain.Role{authenticationdomain.RoleCustomer}, time.Now())
-		request := httptest.NewRequest(http.MethodGet, "/orders?limit=101&offset=-1", nil)
-		request.Header.Set("Authorization", "Bearer "+accessToken)
-		responseRecorder := httptest.NewRecorder()
-		router.ServeHTTP(responseRecorder, request)
-		if responseRecorder.Code != http.StatusBadRequest {
-			t.Fatalf("expected bad request, received %d", responseRecorder.Code)
-		}
-	})
+func TestOrderHandlerHelpers(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	context, _ := gin.CreateTestContext(httptest.NewRecorder())
+	context.Request = httptest.NewRequest(http.MethodGet, "/?value=7&broken=x", nil)
+	if value, err := orderQueryValue(context, "missing", 3); value != 3 || err != nil {
+		t.Fatalf("fallback = %d, %v", value, err)
+	}
+	if value, err := orderQueryValue(context, "value", 3); value != 7 || err != nil {
+		t.Fatalf("parsed = %d, %v", value, err)
+	}
+	if _, err := orderQueryValue(context, "broken", 3); err == nil {
+		t.Fatal("expected parse failure")
+	}
+	if containsAnyRole(nil, "ADMINISTRATOR") || containsAnyRole([]string{"CUSTOMER"}, "ADMINISTRATOR") || !containsAnyRole([]string{"SUPPORT"}, "SUPPORT") {
+		t.Fatal("unexpected role matching")
+	}
 }

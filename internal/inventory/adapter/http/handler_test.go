@@ -42,6 +42,16 @@ func TestHandler(t *testing.T) {
 	router := gin.New()
 	router.PUT("/inventory/:productID", handler.SetQuantity)
 
+	t.Run("it should reject malformed JSON", func(t *testing.T) {
+		request := httptest.NewRequest(http.MethodPut, "/inventory/product-1", bytes.NewBufferString(`{`))
+		request.Header.Set("Content-Type", "application/json")
+		responseRecorder := httptest.NewRecorder()
+		router.ServeHTTP(responseRecorder, request)
+		if responseRecorder.Code != http.StatusBadRequest || responseRecorder.Body.String() != `{"error":"the JSON request body is invalid."}` {
+			t.Fatalf("unexpected response: %d, %s", responseRecorder.Code, responseRecorder.Body.String())
+		}
+	})
+
 	t.Run("it should set a product quantity", func(t *testing.T) {
 		request := httptest.NewRequest(http.MethodPut, "/inventory/product-1", bytes.NewBufferString(`{"quantity":5}`))
 		request.Header.Set("Content-Type", "application/json")

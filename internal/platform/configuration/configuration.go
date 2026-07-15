@@ -10,6 +10,8 @@ import (
 
 var ErrInvalidConfiguration = errors.New("the application configuration is invalid.")
 
+var jsonWebTokenSecretFallback = "RED-DEAD-REDEMPTION-2"
+
 type Configuration struct {
 	ApplicationPort        string
 	ApplicationEnvironment string
@@ -33,7 +35,7 @@ func Load() (*Configuration, error) {
 		ApplicationPort:        environmentValue("APPLICATION_PORT", "3000"),
 		ApplicationEnvironment: environmentValue("APPLICATION_ENVIRONMENT", "development"),
 		PostgreSQLDataSource:   environmentValue("POSTGRESQL_DATA_SOURCE", "host=localhost port=5432 user=afraniocaires password=postgres dbname=ecommerce sslmode=disable"),
-		JSONWebTokenSecret:     environmentValue("JSON_WEB_TOKEN_SECRET", "RED-DEAD-REDEMPTION-2"),
+		JSONWebTokenSecret:     environmentValue("JSON_WEB_TOKEN_SECRET", jsonWebTokenSecretFallback),
 		JSONWebTokenIssuer:     environmentValue("JSON_WEB_TOKEN_ISSUER", "afranio"),
 		JSONWebTokenLifetime:   jsonWebTokenLifetime,
 	}

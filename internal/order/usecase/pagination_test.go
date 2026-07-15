@@ -28,4 +28,10 @@ func TestNewOrderPageRequest(t *testing.T) {
 			}
 		})
 	}
+
+	for _, input := range []struct{ limit, offset int }{{1, 0}, {100, 0}} {
+		if pageRequest, err := NewOrderPageRequest(input.limit, input.offset); err != nil || pageRequest.Limit != input.limit || pageRequest.Offset != input.offset {
+			t.Fatalf("NewOrderPageRequest(%d, %d) = %#v, %v", input.limit, input.offset, pageRequest, err)
+		}
+	}
 }

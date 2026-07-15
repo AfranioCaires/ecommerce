@@ -1,4 +1,4 @@
-.PHONY: run build test vet check compose-up compose-down database-up swagger
+.PHONY: run build test coverage vet check compose-up compose-down database-up swagger
 
 run:
 	go run ./cmd/api
@@ -8,6 +8,9 @@ build:
 
 test:
 	go test -count=1 ./...
+
+coverage:
+	./scripts/coverage.sh
 
 vet:
 	go vet ./...

@@ -111,6 +111,14 @@ Execute os testes sem utilizar resultados armazenados em cache:
 make test
 ```
 
+Valide a cobertura de todo código manual útil (excluindo apenas o Swagger gerado e o bootstrap do processo):
+
+```bash
+make coverage
+```
+
+O comando falha se a cobertura for diferente de 100,0%.
+
 Execute a análise estática:
 
 ```bash

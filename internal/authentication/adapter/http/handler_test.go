@@ -67,6 +67,30 @@ func TestHandler(t *testing.T) {
 			t.Fatalf("expected bad request, received %d", responseRecorder.Code)
 		}
 	})
+
+	t.Run("it should reject invalid registration data", func(t *testing.T) {
+		responseRecorder := performJSONRequest(router, http.MethodPost, "/register", dto.CredentialsRequest{Email: " ", Password: "password"})
+		if responseRecorder.Code != http.StatusBadRequest {
+			t.Fatalf("expected bad request, received %d", responseRecorder.Code)
+		}
+	})
+
+	t.Run("it should reject malformed login JSON", func(t *testing.T) {
+		request := httptest.NewRequest(http.MethodPost, "/login", bytes.NewBufferString("{"))
+		request.Header.Set("Content-Type", "application/json")
+		responseRecorder := httptest.NewRecorder()
+		router.ServeHTTP(responseRecorder, request)
+		if responseRecorder.Code != http.StatusBadRequest {
+			t.Fatalf("expected bad request, received %d", responseRecorder.Code)
+		}
+	})
+
+	t.Run("it should reject invalid login credentials", func(t *testing.T) {
+		responseRecorder := performJSONRequest(router, http.MethodPost, "/login", dto.CredentialsRequest{Email: "customer@example.com", Password: "wrong"})
+		if responseRecorder.Code != http.StatusUnauthorized {
+			t.Fatalf("expected unauthorized, received %d", responseRecorder.Code)
+		}
+	})
 }
 
 func performJSONRequest(router http.Handler, method string, path string, value any) *httptest.ResponseRecorder {
