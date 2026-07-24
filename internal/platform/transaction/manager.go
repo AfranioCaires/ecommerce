@@ -1,60 +1,70 @@
 package transaction
 
 import (
-	stdcontext "context"
+	"context"
+	"database/sql"
+	"fmt"
 
-	"gorm.io/gorm"
+	databasequeries "github.com/afraniocaires/ecommerce/internal/platform/database/sqlc"
 )
 
-type databaseContextKey string
-
-const activeDatabaseConnectionKey databaseContextKey = "active_database_connection"
+type queriesContextKey struct{}
 
 type Manager struct {
-	databaseConnection *gorm.DB
+	databaseConnection *sql.DB
 }
 
-func NewManager(databaseConnection *gorm.DB) *Manager {
+func NewManager(databaseConnection *sql.DB) *Manager {
 	return &Manager{databaseConnection: databaseConnection}
 }
 
 func (manager *Manager) Execute(
-	context stdcontext.Context,
-	operation func(transactionContext stdcontext.Context) error,
+	applicationContext context.Context,
+	operation func(transactionContext context.Context) error,
 ) error {
-	return manager.databaseConnection.
-		WithContext(context).
-		Transaction(func(transactionConnection *gorm.DB) error {
-			transactionContext := contextWithDatabaseConnection(
-				context,
-				transactionConnection,
-			)
-
-			return operation(transactionContext)
-		})
-}
-
-func DatabaseConnection(
-	context stdcontext.Context,
-	fallbackDatabaseConnection *gorm.DB,
-) *gorm.DB {
-	databaseConnection, available := context.Value(
-		activeDatabaseConnectionKey,
-	).(*gorm.DB)
-	if available {
-		return databaseConnection.WithContext(context)
+	databaseTransaction, errorValue := manager.databaseConnection.BeginTx(
+		applicationContext,
+		nil,
+	)
+	if errorValue != nil {
+		return fmt.Errorf("begin database transaction: %w", errorValue)
 	}
 
-	return fallbackDatabaseConnection.WithContext(context)
+	transactionContext := context.WithValue(
+		applicationContext,
+		queriesContextKey{},
+		databasequeries.New(databaseTransaction),
+	)
+
+	if errorValue := operation(transactionContext); errorValue != nil {
+		if rollbackError := databaseTransaction.Rollback(); rollbackError != nil {
+			return fmt.Errorf(
+				"rollback database transaction after %v: %w",
+				errorValue,
+				rollbackError,
+			)
+		}
+
+		return errorValue
+	}
+
+	if errorValue := databaseTransaction.Commit(); errorValue != nil {
+		return fmt.Errorf("commit database transaction: %w", errorValue)
+	}
+
+	return nil
 }
 
-func contextWithDatabaseConnection(
-	context stdcontext.Context,
-	databaseConnection *gorm.DB,
-) stdcontext.Context {
-	return stdcontext.WithValue(
-		context,
-		activeDatabaseConnectionKey,
-		databaseConnection,
-	)
+func Queries(
+	applicationContext context.Context,
+	fallbackQueries *databasequeries.Queries,
+) *databasequeries.Queries {
+	transactionQueries, available := applicationContext.Value(
+		queriesContextKey{},
+	).(*databasequeries.Queries)
+	if available {
+		return transactionQueries
+	}
+
+	return fallbackQueries
 }

@@ -1,7 +1,7 @@
 package routes
 
 import (
-	"github.com/gin-gonic/gin"
+	"net/http"
 
 	authenticationdomain "github.com/afraniocaires/ecommerce/internal/authentication/domain"
 	inventorytransport "github.com/afraniocaires/ecommerce/internal/inventory/adapter/http"
@@ -9,14 +9,16 @@ import (
 )
 
 func RegisterInventoryRoutes(
-	apiRoutes *gin.RouterGroup,
+	router *http.ServeMux,
 	inventoryHandler *inventorytransport.Handler,
 	accessTokenParser middleware.AccessTokenParser,
 ) {
-	inventoryRoutes := apiRoutes.Group("/inventory")
-	inventoryRoutes.PUT("/:productID",
-		middleware.RequireAuthentication(accessTokenParser),
-		middleware.RequireAnyRole(string(authenticationdomain.RoleAdministrator)),
-		inventoryHandler.SetQuantity,
+	router.Handle(
+		"PUT /api/inventory/{productID}",
+		middleware.Chain(
+			http.HandlerFunc(inventoryHandler.SetQuantity),
+			middleware.RequireAuthentication(accessTokenParser),
+			middleware.RequireAnyRole(string(authenticationdomain.RoleAdministrator)),
+		),
 	)
 }

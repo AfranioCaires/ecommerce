@@ -10,8 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gin-gonic/gin"
-
 	authenticationdomain "github.com/afraniocaires/ecommerce/internal/authentication/domain"
 	catalogdomain "github.com/afraniocaires/ecommerce/internal/catalog/domain"
 	"github.com/afraniocaires/ecommerce/internal/checkout/adapter/http/dto"
@@ -55,21 +53,22 @@ func (dependencies *checkoutDependencies) Execute(applicationContext context.Con
 
 var fixedCheckoutTime = time.Date(2026, time.July, 15, 12, 0, 0, 0, time.UTC)
 
-func checkoutRouter(dependencies *checkoutDependencies, authenticated bool) (*gin.Engine, string) {
+func checkoutRouter(dependencies *checkoutDependencies, authenticated bool) (http.Handler, string) {
 	useCase := checkoutusecase.NewCheckoutUseCase(dependencies, dependencies, dependencies, dependencies, dependencies, func() time.Time { return fixedCheckoutTime })
 	handler := NewHandler(useCase)
-	router := gin.New()
+	router := http.NewServeMux()
+	var checkoutHandler http.Handler = http.HandlerFunc(handler.Checkout)
 	token := ""
 	if authenticated {
 		manager := security.NewJSONWebTokenManager("secret", "ecommerce", time.Hour)
 		token, _ = manager.Generate("user-1", []authenticationdomain.Role{authenticationdomain.RoleCustomer}, time.Now())
-		router.Use(middleware.RequireAuthentication(manager))
+		checkoutHandler = middleware.RequireAuthentication(manager)(checkoutHandler)
 	}
-	router.POST("/orders", handler.Checkout)
+	router.Handle("POST /orders", checkoutHandler)
 	return router, token
 }
 
-func performCheckoutRequest(router *gin.Engine, token, body string) *httptest.ResponseRecorder {
+func performCheckoutRequest(router http.Handler, token, body string) *httptest.ResponseRecorder {
 	request := httptest.NewRequest(http.MethodPost, "/orders", bytes.NewBufferString(body))
 	request.Header.Set("Content-Type", "application/json")
 	if token != "" {
@@ -81,7 +80,6 @@ func performCheckoutRequest(router *gin.Engine, token, body string) *httptest.Re
 }
 
 func TestHandler(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	product, _ := catalogdomain.NewProduct("product-1", "Keyboard", "Mechanical", 10000, fixedCheckoutTime)
 	dependencyError := errors.New("dependency failed")
 	validBody := `{"items":[{"product_id":"product-1","quantity":2}]}`
@@ -98,7 +96,7 @@ func TestHandler(t *testing.T) {
 		{name: "domain validation error", body: `{"items":[]}`, authenticated: true, dependencies: &checkoutDependencies{}, wantStatus: http.StatusBadRequest},
 		{name: "product not found", body: validBody, authenticated: true, dependencies: &checkoutDependencies{}, wantStatus: http.StatusNotFound},
 		{name: "insufficient stock", body: validBody, authenticated: true, dependencies: &checkoutDependencies{products: []*catalogdomain.Product{product}, reserveError: inventorydomain.ErrInsufficientStock}, wantStatus: http.StatusConflict},
-		{name: "generic failure", body: validBody, authenticated: true, dependencies: &checkoutDependencies{findError: dependencyError}, wantStatus: http.StatusBadRequest},
+		{name: "generic failure", body: validBody, authenticated: true, dependencies: &checkoutDependencies{findError: dependencyError}, wantStatus: http.StatusInternalServerError},
 		{name: "approved checkout", body: validBody, authenticated: true, dependencies: &checkoutDependencies{products: []*catalogdomain.Product{product}, paymentStatus: paymentdomain.PaymentStatusApproved}, wantStatus: http.StatusCreated},
 		{name: "declined checkout", body: validBody, authenticated: true, dependencies: &checkoutDependencies{products: []*catalogdomain.Product{product}, paymentStatus: paymentdomain.PaymentStatusDeclined}, wantStatus: http.StatusCreated},
 	} {

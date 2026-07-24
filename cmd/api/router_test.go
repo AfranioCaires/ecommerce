@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/afraniocaires/ecommerce/internal/platform/security"
@@ -20,16 +21,16 @@ func TestRouter(t *testing.T) {
 	t.Run("it should expose health", func(t *testing.T) {
 		responseRecorder := httptest.NewRecorder()
 		router.ServeHTTP(responseRecorder, httptest.NewRequest(http.MethodGet, "/health", nil))
-		if responseRecorder.Code != http.StatusOK || responseRecorder.Body.String() != "{\"status\":\"UP\"}" {
+		if responseRecorder.Code != http.StatusOK || strings.TrimSpace(responseRecorder.Body.String()) != "{\"status\":\"UP\"}" {
 			t.Fatalf("unexpected health response: %d, %s", responseRecorder.Code, responseRecorder.Body.String())
 		}
 	})
 
-	t.Run("it should expose swagger documentation", func(t *testing.T) {
+	t.Run("it should reject the wrong health method", func(t *testing.T) {
 		responseRecorder := httptest.NewRecorder()
-		router.ServeHTTP(responseRecorder, httptest.NewRequest(http.MethodGet, "/swagger/index.html", nil))
-		if responseRecorder.Code != http.StatusOK {
-			t.Fatalf("expected success, received %d", responseRecorder.Code)
+		router.ServeHTTP(responseRecorder, httptest.NewRequest(http.MethodPost, "/health", nil))
+		if responseRecorder.Code != http.StatusMethodNotAllowed {
+			t.Fatalf("expected method not allowed, received %d", responseRecorder.Code)
 		}
 	})
 

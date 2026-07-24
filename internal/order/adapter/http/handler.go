@@ -7,8 +7,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/gin-gonic/gin"
-
 	authenticationdomain "github.com/afraniocaires/ecommerce/internal/authentication/domain"
 	"github.com/afraniocaires/ecommerce/internal/order/adapter/http/dto"
 	orderdomain "github.com/afraniocaires/ecommerce/internal/order/domain"
@@ -35,39 +33,29 @@ func NewHandler(
 	}
 }
 
-// GetByID godoc
-// @Summary Get an order
-// @Description Returns an owned order or any order for an administrator or support user.
-// @Tags Orders
-// @Produce json
-// @Security BearerAuth
-// @Param orderID path string true "Order ID"
-// @Success 200 {object} dto.OrderResponse
-// @Failure 401 {object} httpresponse.ErrorResponse
-// @Failure 403 {object} httpresponse.ErrorResponse
-// @Failure 404 {object} httpresponse.ErrorResponse
-// @Failure 500 {object} httpresponse.ErrorResponse
-// @Router /api/orders/{orderID} [get]
-func (handler *Handler) GetByID(context *gin.Context) {
-	authenticatedUserID, available := middleware.UserID(context)
+func (handler *Handler) GetByID(
+	responseWriter http.ResponseWriter,
+	request *http.Request,
+) {
+	authenticatedUserID, available := middleware.UserID(request.Context())
 	if !available {
-		context.JSON(http.StatusUnauthorized, httpresponse.ErrorResponse{Error: middleware.ErrMissingIdentity.Error()})
+		httpresponse.JSON(responseWriter, http.StatusUnauthorized, httpresponse.ErrorResponse{Error: middleware.ErrMissingIdentity.Error()})
 		return
 	}
 
-	authenticatedRoles, _ := middleware.Roles(context)
-
+	authenticatedRoles, _ := middleware.Roles(request.Context())
 	order, errorValue := handler.getOrderUseCase.Execute(
-		context.Request.Context(),
-		context.Param("orderID"),
+		request.Context(),
+		request.PathValue("orderID"),
 	)
 	if errorValue != nil {
 		statusCode := http.StatusInternalServerError
+		message := "an unexpected error occurred."
 		if errors.Is(errorValue, orderdomain.ErrOrderNotFound) {
 			statusCode = http.StatusNotFound
+			message = errorValue.Error()
 		}
-
-		context.JSON(statusCode, httpresponse.ErrorResponse{Error: errorValue.Error()})
+		httpresponse.JSON(responseWriter, statusCode, httpresponse.ErrorResponse{Error: message})
 		return
 	}
 
@@ -76,52 +64,40 @@ func (handler *Handler) GetByID(context *gin.Context) {
 		string(authenticationdomain.RoleAdministrator),
 		string(authenticationdomain.RoleSupport),
 	)
-
 	if order.UserID != authenticatedUserID && !canReadEveryOrder {
-		context.JSON(http.StatusForbidden, httpresponse.ErrorResponse{Error: middleware.ErrForbidden.Error()})
+		httpresponse.JSON(responseWriter, http.StatusForbidden, httpresponse.ErrorResponse{Error: middleware.ErrForbidden.Error()})
 		return
 	}
 
-	context.JSON(http.StatusOK, toOrderResponse(order))
+	httpresponse.JSON(responseWriter, http.StatusOK, toOrderResponse(order))
 }
 
-// List godoc
-// @Summary List orders
-// @Description Returns owned orders or every order for an administrator or support user.
-// @Tags Orders
-// @Produce json
-// @Security BearerAuth
-// @Param limit query int false "Maximum number of orders" default(20) minimum(1) maximum(100)
-// @Param offset query int false "Number of orders to skip" default(0) minimum(0)
-// @Success 200 {array} dto.OrderResponse
-// @Failure 400 {object} httpresponse.ErrorResponse
-// @Failure 401 {object} httpresponse.ErrorResponse
-// @Failure 500 {object} httpresponse.ErrorResponse
-// @Router /api/orders [get]
-func (handler *Handler) List(context *gin.Context) {
-	authenticatedUserID, available := middleware.UserID(context)
+func (handler *Handler) List(
+	responseWriter http.ResponseWriter,
+	request *http.Request,
+) {
+	authenticatedUserID, available := middleware.UserID(request.Context())
 	if !available {
-		context.JSON(http.StatusUnauthorized, httpresponse.ErrorResponse{Error: middleware.ErrMissingIdentity.Error()})
+		httpresponse.JSON(responseWriter, http.StatusUnauthorized, httpresponse.ErrorResponse{Error: middleware.ErrMissingIdentity.Error()})
 		return
 	}
 
-	authenticatedRoles, _ := middleware.Roles(context)
-
-	limit, errorValue := orderQueryValue(context, "limit", orderusecase.DefaultOrderLimit)
+	authenticatedRoles, _ := middleware.Roles(request.Context())
+	limit, errorValue := orderQueryValue(request, "limit", orderusecase.DefaultOrderLimit)
 	if errorValue != nil {
-		context.JSON(http.StatusBadRequest, httpresponse.ErrorResponse{Error: orderusecase.ErrInvalidOrderPagination.Error()})
+		httpresponse.JSON(responseWriter, http.StatusBadRequest, httpresponse.ErrorResponse{Error: orderusecase.ErrInvalidOrderPagination.Error()})
 		return
 	}
 
-	offset, errorValue := orderQueryValue(context, "offset", orderusecase.DefaultOrderOffset)
+	offset, errorValue := orderQueryValue(request, "offset", orderusecase.DefaultOrderOffset)
 	if errorValue != nil {
-		context.JSON(http.StatusBadRequest, httpresponse.ErrorResponse{Error: orderusecase.ErrInvalidOrderPagination.Error()})
+		httpresponse.JSON(responseWriter, http.StatusBadRequest, httpresponse.ErrorResponse{Error: orderusecase.ErrInvalidOrderPagination.Error()})
 		return
 	}
 
 	pageRequest, errorValue := orderusecase.NewOrderPageRequest(limit, offset)
 	if errorValue != nil {
-		context.JSON(http.StatusBadRequest, httpresponse.ErrorResponse{Error: errorValue.Error()})
+		httpresponse.JSON(responseWriter, http.StatusBadRequest, httpresponse.ErrorResponse{Error: errorValue.Error()})
 		return
 	}
 
@@ -132,23 +108,17 @@ func (handler *Handler) List(context *gin.Context) {
 	)
 
 	var orders []*orderdomain.Order
-	errorValue = nil
-
 	if canReadEveryOrder {
-		orders, errorValue = handler.listAllOrdersUseCase.Execute(
-			context.Request.Context(),
-			pageRequest,
-		)
+		orders, errorValue = handler.listAllOrdersUseCase.Execute(request.Context(), pageRequest)
 	} else {
 		orders, errorValue = handler.listUserOrdersUseCase.Execute(
-			context.Request.Context(),
+			request.Context(),
 			authenticatedUserID,
 			pageRequest,
 		)
 	}
-
 	if errorValue != nil {
-		context.JSON(http.StatusInternalServerError, httpresponse.ErrorResponse{Error: errorValue.Error()})
+		httpresponse.JSON(responseWriter, http.StatusInternalServerError, httpresponse.ErrorResponse{Error: "an unexpected error occurred."})
 		return
 	}
 
@@ -157,11 +127,11 @@ func (handler *Handler) List(context *gin.Context) {
 		orderResponses = append(orderResponses, toOrderResponse(order))
 	}
 
-	context.JSON(http.StatusOK, orderResponses)
+	httpresponse.JSON(responseWriter, http.StatusOK, orderResponses)
 }
 
-func orderQueryValue(context *gin.Context, name string, fallback int) (int, error) {
-	value := context.Query(name)
+func orderQueryValue(request *http.Request, name string, fallback int) (int, error) {
+	value := request.URL.Query().Get(name)
 	if value == "" {
 		return fallback, nil
 	}
@@ -181,7 +151,6 @@ func containsAnyRole(authenticatedRoles []string, requiredRoles ...string) bool 
 
 func toOrderResponse(order *orderdomain.Order) dto.OrderResponse {
 	orderItemResponses := make([]dto.OrderItemResponse, 0, len(order.Items))
-
 	for _, orderItem := range order.Items {
 		orderItemResponses = append(orderItemResponses, dto.OrderItemResponse{
 			ProductID:      orderItem.ProductID,

@@ -5,10 +5,9 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
-
-	"github.com/gin-gonic/gin"
 
 	"github.com/afraniocaires/ecommerce/internal/inventory/domain"
 	"github.com/afraniocaires/ecommerce/internal/inventory/usecase"
@@ -35,19 +34,18 @@ func (repository *stockRepository) FindByProductIDForUpdate(applicationContext c
 }
 
 func TestHandler(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	repository := &stockRepository{}
 	inventoryService := usecase.NewInventoryService(repository, time.Now)
 	handler := NewHandler(inventoryService)
-	router := gin.New()
-	router.PUT("/inventory/:productID", handler.SetQuantity)
+	router := http.NewServeMux()
+	router.HandleFunc("PUT /inventory/{productID}", handler.SetQuantity)
 
 	t.Run("it should reject malformed JSON", func(t *testing.T) {
 		request := httptest.NewRequest(http.MethodPut, "/inventory/product-1", bytes.NewBufferString(`{`))
 		request.Header.Set("Content-Type", "application/json")
 		responseRecorder := httptest.NewRecorder()
 		router.ServeHTTP(responseRecorder, request)
-		if responseRecorder.Code != http.StatusBadRequest || responseRecorder.Body.String() != `{"error":"the JSON request body is invalid."}` {
+		if responseRecorder.Code != http.StatusBadRequest || strings.TrimSpace(responseRecorder.Body.String()) != `{"error":"the JSON request body is invalid."}` {
 			t.Fatalf("unexpected response: %d, %s", responseRecorder.Code, responseRecorder.Body.String())
 		}
 	})

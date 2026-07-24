@@ -9,8 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gin-gonic/gin"
-
 	authenticationdomain "github.com/afraniocaires/ecommerce/internal/authentication/domain"
 	orderdomain "github.com/afraniocaires/ecommerce/internal/order/domain"
 	orderusecase "github.com/afraniocaires/ecommerce/internal/order/usecase"
@@ -62,25 +60,28 @@ func (repository *orderRepository) FindAll(_ context.Context, pageRequest orderu
 	return repository.orders, nil
 }
 
-func orderRouter(repository *orderRepository, userID string, roles []authenticationdomain.Role, authenticated bool) (*gin.Engine, string) {
+func orderRouter(repository *orderRepository, userID string, roles []authenticationdomain.Role, authenticated bool) (http.Handler, string) {
 	handler := NewHandler(
 		orderusecase.NewGetOrderUseCase(repository),
 		orderusecase.NewListUserOrdersUseCase(repository),
 		orderusecase.NewListAllOrdersUseCase(repository),
 	)
-	router := gin.New()
+	router := http.NewServeMux()
+	var listHandler http.Handler = http.HandlerFunc(handler.List)
+	var getHandler http.Handler = http.HandlerFunc(handler.GetByID)
 	token := ""
 	if authenticated {
 		manager := security.NewJSONWebTokenManager("secret", "ecommerce", time.Hour)
 		token, _ = manager.Generate(userID, roles, time.Now())
-		router.Use(middleware.RequireAuthentication(manager))
+		listHandler = middleware.RequireAuthentication(manager)(listHandler)
+		getHandler = middleware.RequireAuthentication(manager)(getHandler)
 	}
-	router.GET("/orders", handler.List)
-	router.GET("/orders/:orderID", handler.GetByID)
+	router.Handle("GET /orders", listHandler)
+	router.Handle("GET /orders/{orderID}", getHandler)
 	return router, token
 }
 
-func performOrderRequest(router *gin.Engine, token, path string) *httptest.ResponseRecorder {
+func performOrderRequest(router http.Handler, token, path string) *httptest.ResponseRecorder {
 	request := httptest.NewRequest(http.MethodGet, path, nil)
 	if token != "" {
 		request.Header.Set("Authorization", "Bearer "+token)
@@ -91,7 +92,6 @@ func performOrderRequest(router *gin.Engine, token, path string) *httptest.Respo
 }
 
 func TestHandler(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	createdAt := time.Date(2026, time.July, 15, 12, 0, 0, 0, time.UTC)
 	order, _ := orderdomain.NewOrder("order-1", "user-1", []orderdomain.OrderItem{{ProductID: "product-1", ProductName: "Keyboard", UnitPriceCents: 100, Quantity: 2}}, createdAt)
 	dependencyError := errors.New("dependency failed")
@@ -143,16 +143,14 @@ func TestHandler(t *testing.T) {
 }
 
 func TestOrderHandlerHelpers(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	context, _ := gin.CreateTestContext(httptest.NewRecorder())
-	context.Request = httptest.NewRequest(http.MethodGet, "/?value=7&broken=x", nil)
-	if value, err := orderQueryValue(context, "missing", 3); value != 3 || err != nil {
+	request := httptest.NewRequest(http.MethodGet, "/?value=7&broken=x", nil)
+	if value, err := orderQueryValue(request, "missing", 3); value != 3 || err != nil {
 		t.Fatalf("fallback = %d, %v", value, err)
 	}
-	if value, err := orderQueryValue(context, "value", 3); value != 7 || err != nil {
+	if value, err := orderQueryValue(request, "value", 3); value != 7 || err != nil {
 		t.Fatalf("parsed = %d, %v", value, err)
 	}
-	if _, err := orderQueryValue(context, "broken", 3); err == nil {
+	if _, err := orderQueryValue(request, "broken", 3); err == nil {
 		t.Fatal("expected parse failure")
 	}
 	if containsAnyRole(nil, "ADMINISTRATOR") || containsAnyRole([]string{"CUSTOMER"}, "ADMINISTRATOR") || !containsAnyRole([]string{"SUPPORT"}, "SUPPORT") {

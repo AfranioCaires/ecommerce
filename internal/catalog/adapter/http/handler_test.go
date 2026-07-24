@@ -10,8 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gin-gonic/gin"
-
 	"github.com/afraniocaires/ecommerce/internal/catalog/adapter/http/dto"
 	catalogrepository "github.com/afraniocaires/ecommerce/internal/catalog/adapter/repository/memory"
 	"github.com/afraniocaires/ecommerce/internal/catalog/domain"
@@ -19,16 +17,15 @@ import (
 )
 
 func TestHandler(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	productRepository := catalogrepository.NewProductRepository()
 	createProductUseCase := usecase.NewCreateProductUseCase(productRepository, time.Now)
 	getProductUseCase := usecase.NewGetProductUseCase(productRepository)
 	listProductsUseCase := usecase.NewListProductsUseCase(productRepository)
 	handler := NewHandler(createProductUseCase, getProductUseCase, listProductsUseCase)
-	router := gin.New()
-	router.POST("/products", handler.Create)
-	router.GET("/products", handler.List)
-	router.GET("/products/:productID", handler.GetByID)
+	router := http.NewServeMux()
+	router.HandleFunc("POST /products", handler.Create)
+	router.HandleFunc("GET /products", handler.List)
+	router.HandleFunc("GET /products/{productID}", handler.GetByID)
 
 	var productResponse dto.ProductResponse
 	t.Run("it should create a product", func(t *testing.T) {
@@ -133,7 +130,6 @@ func (stub productRepositoryStub) FindPage(_ context.Context, request usecase.Pr
 }
 
 func TestHandlerDependencyErrors(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	expectedError := errors.New("repository failed")
 	repository := productRepositoryStub{
 		findByID: func(string) (*domain.Product, error) { return nil, expectedError },
@@ -144,9 +140,9 @@ func TestHandlerDependencyErrors(t *testing.T) {
 		usecase.NewGetProductUseCase(repository),
 		usecase.NewListProductsUseCase(repository),
 	)
-	router := gin.New()
-	router.GET("/products", handler.List)
-	router.GET("/products/:productID", handler.GetByID)
+	router := http.NewServeMux()
+	router.HandleFunc("GET /products", handler.List)
+	router.HandleFunc("GET /products/{productID}", handler.GetByID)
 
 	t.Run("it should return internal server error for product lookup failures", func(t *testing.T) {
 		responseRecorder := httptest.NewRecorder()

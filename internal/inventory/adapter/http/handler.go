@@ -1,12 +1,12 @@
 package inventorytransport
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
-	"github.com/gin-gonic/gin"
-
 	"github.com/afraniocaires/ecommerce/internal/inventory/adapter/http/dto"
+	"github.com/afraniocaires/ecommerce/internal/inventory/domain"
 	"github.com/afraniocaires/ecommerce/internal/inventory/usecase"
 	"github.com/afraniocaires/ecommerce/internal/platform/httpresponse"
 )
@@ -19,39 +19,34 @@ func NewHandler(inventoryService *usecase.InventoryService) *Handler {
 	return &Handler{inventoryService: inventoryService}
 }
 
-// SetQuantity godoc
-// @Summary Set product stock
-// @Description Replaces the available quantity for a product. Administrator access is required.
-// @Tags Inventory
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param productID path string true "Product ID"
-// @Param request body dto.SetStockRequest true "Stock data"
-// @Success 200 {object} dto.StockResponse
-// @Failure 400 {object} httpresponse.ErrorResponse
-// @Failure 401 {object} httpresponse.ErrorResponse
-// @Failure 403 {object} httpresponse.ErrorResponse
-// @Router /api/inventory/{productID} [put]
-func (handler *Handler) SetQuantity(context *gin.Context) {
-	var request dto.SetStockRequest
-
-	if errorValue := context.ShouldBindJSON(&request); errorValue != nil {
-		context.JSON(http.StatusBadRequest, httpresponse.ErrorResponse{Error: "the JSON request body is invalid."})
+func (handler *Handler) SetQuantity(
+	responseWriter http.ResponseWriter,
+	request *http.Request,
+) {
+	var stockRequest dto.SetStockRequest
+	if errorValue := httpresponse.DecodeJSON(responseWriter, request, &stockRequest); errorValue != nil {
+		httpresponse.JSON(responseWriter, http.StatusBadRequest, httpresponse.ErrorResponse{Error: "the JSON request body is invalid."})
 		return
 	}
 
 	stock, errorValue := handler.inventoryService.SetQuantity(
-		context.Request.Context(),
-		context.Param("productID"),
-		request.Quantity,
+		request.Context(),
+		request.PathValue("productID"),
+		stockRequest.Quantity,
 	)
 	if errorValue != nil {
-		context.JSON(http.StatusBadRequest, httpresponse.ErrorResponse{Error: errorValue.Error()})
+		statusCode := http.StatusInternalServerError
+		message := "an unexpected error occurred."
+		if errors.Is(errorValue, domain.ErrEmptyStockProductID) ||
+			errors.Is(errorValue, domain.ErrInvalidStockQuantity) {
+			statusCode = http.StatusBadRequest
+			message = errorValue.Error()
+		}
+		httpresponse.JSON(responseWriter, statusCode, httpresponse.ErrorResponse{Error: message})
 		return
 	}
 
-	context.JSON(http.StatusOK, dto.StockResponse{
+	httpresponse.JSON(responseWriter, http.StatusOK, dto.StockResponse{
 		ProductID: stock.ProductID,
 		Quantity:  stock.Quantity,
 		UpdatedAt: stock.UpdatedAt.Format(time.RFC3339),

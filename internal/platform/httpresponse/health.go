@@ -1,10 +1,6 @@
 package httpresponse
 
-import (
-	"net/http"
-
-	"github.com/gin-gonic/gin"
-)
+import "net/http"
 
 type HealthResponse struct {
 	Status string `json:"status"`
@@ -17,6 +13,6 @@ type HealthResponse struct {
 // @Produce json
 // @Success 200 {object} HealthResponse
 // @Router /health [get]
-func Health(context *gin.Context) {
-	context.JSON(http.StatusOK, HealthResponse{Status: "UP"})
+func Health(responseWriter http.ResponseWriter, _ *http.Request) {
+	JSON(responseWriter, http.StatusOK, HealthResponse{Status: "UP"})
 }

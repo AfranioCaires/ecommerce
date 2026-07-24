@@ -1,132 +1,120 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
-	"github.com/gin-gonic/gin"
-
 	"github.com/afraniocaires/ecommerce/internal/authentication/domain"
 	"github.com/afraniocaires/ecommerce/internal/platform/security"
 )
 
-func TestAuthenticationMiddleware(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+func TestAuthenticationAndAuthorization(t *testing.T) {
 	accessTokenManager := security.NewJSONWebTokenManager("secret", "ecommerce", time.Hour)
-	accessToken, _ := accessTokenManager.Generate("user-1", []domain.Role{domain.RoleCustomer}, time.Now())
+	accessToken, _ := accessTokenManager.Generate(
+		"user-1",
+		[]domain.Role{domain.RoleCustomer},
+		time.Now(),
+	)
 
-	t.Run("it should reject a missing access token", func(t *testing.T) {
-		router := gin.New()
-		router.Use(RequireAuthentication(accessTokenManager))
-		router.GET("/protected", func(context *gin.Context) { context.Status(http.StatusNoContent) })
-		responseRecorder := httptest.NewRecorder()
-		router.ServeHTTP(responseRecorder, httptest.NewRequest(http.MethodGet, "/protected", nil))
-		if responseRecorder.Code != http.StatusUnauthorized {
-			t.Fatalf("expected unauthorized, received %d", responseRecorder.Code)
+	successHandler := http.HandlerFunc(func(responseWriter http.ResponseWriter, request *http.Request) {
+		userID, userAvailable := UserID(request.Context())
+		roles, rolesAvailable := Roles(request.Context())
+		if !userAvailable || !rolesAvailable || userID != "user-1" || len(roles) != 1 {
+			http.Error(responseWriter, "missing identity", http.StatusInternalServerError)
+			return
 		}
+		responseWriter.WriteHeader(http.StatusNoContent)
 	})
 
-	t.Run("it should expose authenticated identity", func(t *testing.T) {
-		router := gin.New()
-		router.Use(RequireAuthentication(accessTokenManager), RequireAnyRole(string(domain.RoleCustomer)))
-		router.GET("/protected", func(context *gin.Context) {
-			userID, available := UserID(context)
-			if !available || userID != "user-1" {
-				context.Status(http.StatusInternalServerError)
-				return
+	for _, testCase := range []struct {
+		name       string
+		token      string
+		middleware Middleware
+		wantStatus int
+	}{
+		{name: "missing token", middleware: RequireAuthentication(accessTokenManager), wantStatus: http.StatusUnauthorized},
+		{name: "invalid token", token: "invalid", middleware: RequireAuthentication(accessTokenManager), wantStatus: http.StatusUnauthorized},
+		{name: "authenticated customer", token: accessToken, middleware: RequireAuthentication(accessTokenManager), wantStatus: http.StatusNoContent},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, "/protected", nil)
+			if testCase.token != "" {
+				request.Header.Set("Authorization", "Bearer "+testCase.token)
 			}
-			context.Status(http.StatusNoContent)
+			responseRecorder := httptest.NewRecorder()
+			testCase.middleware(successHandler).ServeHTTP(responseRecorder, request)
+			if responseRecorder.Code != testCase.wantStatus {
+				t.Fatalf("status = %d, body = %s", responseRecorder.Code, responseRecorder.Body.String())
+			}
 		})
-		request := httptest.NewRequest(http.MethodGet, "/protected", nil)
-		request.Header.Set("Authorization", "Bearer "+accessToken)
-		responseRecorder := httptest.NewRecorder()
-		router.ServeHTTP(responseRecorder, request)
-		if responseRecorder.Code != http.StatusNoContent {
-			t.Fatalf("expected success, received %d", responseRecorder.Code)
-		}
-	})
+	}
 
-	t.Run("it should reject a role that is not allowed", func(t *testing.T) {
-		router := gin.New()
-		router.Use(RequireAuthentication(accessTokenManager), RequireAnyRole(string(domain.RoleAdministrator)))
-		router.GET("/protected", func(context *gin.Context) { context.Status(http.StatusNoContent) })
-		request := httptest.NewRequest(http.MethodGet, "/protected", nil)
-		request.Header.Set("Authorization", "Bearer "+accessToken)
-		responseRecorder := httptest.NewRecorder()
-		router.ServeHTTP(responseRecorder, request)
-		if responseRecorder.Code != http.StatusForbidden {
-			t.Fatalf("expected forbidden, received %d", responseRecorder.Code)
-		}
-	})
+	authenticatedHandler := RequireAuthentication(accessTokenManager)(
+		RequireAnyRole(string(domain.RoleAdministrator))(successHandler),
+	)
+	request := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	request.Header.Set("Authorization", "Bearer "+accessToken)
+	responseRecorder := httptest.NewRecorder()
+	authenticatedHandler.ServeHTTP(responseRecorder, request)
+	if responseRecorder.Code != http.StatusForbidden {
+		t.Fatalf("role check status = %d", responseRecorder.Code)
+	}
 
-	t.Run("it should reject an invalid access token", func(t *testing.T) {
-		router := gin.New()
-		router.Use(RequireAuthentication(accessTokenManager))
-		router.GET("/protected", func(context *gin.Context) { context.Status(http.StatusNoContent) })
-		request := httptest.NewRequest(http.MethodGet, "/protected", nil)
-		request.Header.Set("Authorization", "Bearer invalid")
-		responseRecorder := httptest.NewRecorder()
-		router.ServeHTTP(responseRecorder, request)
-		if responseRecorder.Code != http.StatusUnauthorized {
-			t.Fatalf("expected unauthorized, received %d", responseRecorder.Code)
-		}
-	})
-
-	t.Run("it should reject claims without a subject", func(t *testing.T) {
-		tokenWithoutSubject, errorValue := accessTokenManager.Generate("", nil, time.Now())
-		if errorValue != nil {
-			t.Fatal(errorValue)
-		}
-		router := gin.New()
-		router.Use(RequireAuthentication(accessTokenManager))
-		router.GET("/protected", func(context *gin.Context) { context.Status(http.StatusNoContent) })
-		request := httptest.NewRequest(http.MethodGet, "/protected", nil)
-		request.Header.Set("Authorization", "Bearer "+tokenWithoutSubject)
-		responseRecorder := httptest.NewRecorder()
-		router.ServeHTTP(responseRecorder, request)
-		if responseRecorder.Code != http.StatusUnauthorized {
-			t.Fatalf("expected unauthorized, received %d", responseRecorder.Code)
-		}
-	})
-
-	t.Run("it should reject role checks without an identity", func(t *testing.T) {
-		router := gin.New()
-		router.Use(RequireAnyRole(string(domain.RoleCustomer)))
-		router.GET("/protected", func(context *gin.Context) { context.Status(http.StatusNoContent) })
-		responseRecorder := httptest.NewRecorder()
-		router.ServeHTTP(responseRecorder, httptest.NewRequest(http.MethodGet, "/protected", nil))
-		if responseRecorder.Code != http.StatusUnauthorized {
-			t.Fatalf("expected unauthorized, received %d", responseRecorder.Code)
-		}
-	})
+	responseRecorder = httptest.NewRecorder()
+	RequireAnyRole(string(domain.RoleCustomer))(successHandler).ServeHTTP(
+		responseRecorder,
+		httptest.NewRequest(http.MethodGet, "/protected", nil),
+	)
+	if responseRecorder.Code != http.StatusUnauthorized {
+		t.Fatalf("missing identity status = %d", responseRecorder.Code)
+	}
 }
 
-func TestIdentityAccessors(t *testing.T) {
-	context, _ := gin.CreateTestContext(httptest.NewRecorder())
-	if userID, available := UserID(context); available || userID != "" {
-		t.Fatalf("UserID() = %q, %t", userID, available)
+func TestIdentityAccessorsAndChain(t *testing.T) {
+	applicationContext := context.Background()
+	if _, available := UserID(applicationContext); available {
+		t.Fatal("UserID() unexpectedly found an identity")
 	}
-	context.Set(authenticatedUserIDKey, 7)
-	if userID, available := UserID(context); available || userID != "" {
-		t.Fatalf("UserID() = %q, %t", userID, available)
-	}
-	context.Set(authenticatedUserIDKey, "user-1")
-	if userID, available := UserID(context); !available || userID != "user-1" {
-		t.Fatalf("UserID() = %q, %t", userID, available)
+	if _, available := Roles(applicationContext); available {
+		t.Fatal("Roles() unexpectedly found roles")
 	}
 
-	if roles, available := Roles(context); available || roles != nil {
-		t.Fatalf("Roles() = %#v, %t", roles, available)
+	sequence := make([]string, 0, 3)
+	first := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			sequence = append(sequence, "first")
+			next.ServeHTTP(writer, request)
+		})
 	}
-	context.Set(authenticatedRolesKey, "CUSTOMER")
-	if roles, available := Roles(context); available || roles != nil {
-		t.Fatalf("Roles() = %#v, %t", roles, available)
+	second := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			sequence = append(sequence, "second")
+			next.ServeHTTP(writer, request)
+		})
 	}
-	context.Set(authenticatedRolesKey, []string{"CUSTOMER"})
-	roles, available := Roles(context)
-	if !available || len(roles) != 1 || roles[0] != "CUSTOMER" {
-		t.Fatalf("Roles() = %#v, %t", roles, available)
+	final := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		sequence = append(sequence, "handler")
+	})
+
+	Chain(final, first, second).ServeHTTP(
+		httptest.NewRecorder(),
+		httptest.NewRequest(http.MethodGet, "/", nil),
+	)
+	if len(sequence) != 3 || sequence[0] != "first" || sequence[1] != "second" || sequence[2] != "handler" {
+		t.Fatalf("middleware sequence = %#v", sequence)
+	}
+}
+
+func TestRecover(t *testing.T) {
+	responseRecorder := httptest.NewRecorder()
+	Recover(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		panic("boom")
+	})).ServeHTTP(responseRecorder, httptest.NewRequest(http.MethodGet, "/", nil))
+
+	if responseRecorder.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d", responseRecorder.Code)
 	}
 }

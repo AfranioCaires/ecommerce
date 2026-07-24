@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/afraniocaires/ecommerce/internal/authentication/adapter/http/dto"
@@ -18,16 +17,15 @@ import (
 )
 
 func TestHandler(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	userRepository := authenticationrepository.NewUserRepository()
 	passwordHasher := security.NewBcryptPasswordHasher(bcrypt.MinCost)
 	accessTokenManager := security.NewJSONWebTokenManager("secret", "ecommerce", time.Hour)
 	registerUserUseCase := usecase.NewRegisterUserUseCase(userRepository, passwordHasher, time.Now)
 	loginUserUseCase := usecase.NewLoginUserUseCase(userRepository, passwordHasher, accessTokenManager, time.Now)
 	handler := NewHandler(registerUserUseCase, loginUserUseCase)
-	router := gin.New()
-	router.POST("/register", handler.Register)
-	router.POST("/login", handler.Login)
+	router := http.NewServeMux()
+	router.HandleFunc("POST /register", handler.Register)
+	router.HandleFunc("POST /login", handler.Login)
 
 	t.Run("it should register a customer", func(t *testing.T) {
 		responseRecorder := performJSONRequest(router, http.MethodPost, "/register", dto.CredentialsRequest{Email: "customer@example.com", Password: "password"})

@@ -1,7 +1,7 @@
 package routes
 
 import (
-	"github.com/gin-gonic/gin"
+	"net/http"
 
 	authenticationdomain "github.com/afraniocaires/ecommerce/internal/authentication/domain"
 	catalogtransport "github.com/afraniocaires/ecommerce/internal/catalog/adapter/http"
@@ -9,16 +9,18 @@ import (
 )
 
 func RegisterCatalogRoutes(
-	apiRoutes *gin.RouterGroup,
+	router *http.ServeMux,
 	productHandler *catalogtransport.Handler,
 	accessTokenParser middleware.AccessTokenParser,
 ) {
-	productRoutes := apiRoutes.Group("/products")
-	productRoutes.GET("", productHandler.List)
-	productRoutes.GET("/:productID", productHandler.GetByID)
-	productRoutes.POST("",
-		middleware.RequireAuthentication(accessTokenParser),
-		middleware.RequireAnyRole(string(authenticationdomain.RoleAdministrator)),
-		productHandler.Create,
+	router.HandleFunc("GET /api/products", productHandler.List)
+	router.HandleFunc("GET /api/products/{productID}", productHandler.GetByID)
+	router.Handle(
+		"POST /api/products",
+		middleware.Chain(
+			http.HandlerFunc(productHandler.Create),
+			middleware.RequireAuthentication(accessTokenParser),
+			middleware.RequireAnyRole(string(authenticationdomain.RoleAdministrator)),
+		),
 	)
 }

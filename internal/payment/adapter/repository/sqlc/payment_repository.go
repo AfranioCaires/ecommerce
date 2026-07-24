@@ -3,39 +3,34 @@ package paymentrepository
 import (
 	"context"
 
-	"gorm.io/gorm"
-
 	"github.com/afraniocaires/ecommerce/internal/payment/domain"
 	"github.com/afraniocaires/ecommerce/internal/payment/usecase"
+	databasequeries "github.com/afraniocaires/ecommerce/internal/platform/database/sqlc"
 	"github.com/afraniocaires/ecommerce/internal/platform/transaction"
 )
 
 type PaymentRepository struct {
-	databaseConnection *gorm.DB
+	queries *databasequeries.Queries
 }
 
-func NewPaymentRepository(databaseConnection *gorm.DB) *PaymentRepository {
-	return &PaymentRepository{databaseConnection: databaseConnection}
+func NewPaymentRepository(queries *databasequeries.Queries) *PaymentRepository {
+	return &PaymentRepository{queries: queries}
 }
 
 var _ usecase.PaymentRepository = (*PaymentRepository)(nil)
 
 func (repository *PaymentRepository) Save(
-	context context.Context,
+	applicationContext context.Context,
 	payment *domain.Payment,
 ) error {
-	paymentModel := PaymentModel{
+	return transaction.Queries(
+		applicationContext,
+		repository.queries,
+	).CreatePayment(applicationContext, databasequeries.CreatePaymentParams{
 		ID:          payment.ID,
 		OrderID:     payment.OrderID,
 		AmountCents: payment.AmountCents,
 		Status:      string(payment.Status),
 		CreatedAt:   payment.CreatedAt,
-	}
-
-	databaseConnection := transaction.DatabaseConnection(
-		context,
-		repository.databaseConnection,
-	)
-
-	return databaseConnection.Create(&paymentModel).Error
+	})
 }

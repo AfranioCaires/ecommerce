@@ -6,73 +6,109 @@ import (
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
+
+	databasequeries "github.com/afraniocaires/ecommerce/internal/platform/database/sqlc"
 )
 
-func newMockDatabase(t *testing.T) (*gorm.DB, sqlmock.Sqlmock) {
+func newMockDatabase(t *testing.T) (*Manager, *databasequeries.Queries, sqlmock.Sqlmock) {
 	t.Helper()
-	sqlDatabase, mock, err := sqlmock.New()
-	if err != nil {
-		t.Fatal(err)
+
+	databaseConnection, mock, errorValue := sqlmock.New()
+	if errorValue != nil {
+		t.Fatal(errorValue)
 	}
-	t.Cleanup(func() { _ = sqlDatabase.Close() })
-	databaseConnection, err := gorm.Open(
-		postgres.New(postgres.Config{Conn: sqlDatabase}),
-		&gorm.Config{DisableAutomaticPing: true},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return databaseConnection, mock
+	t.Cleanup(func() { _ = databaseConnection.Close() })
+
+	return NewManager(databaseConnection), databasequeries.New(databaseConnection), mock
 }
 
-func TestManager(t *testing.T) {
-	databaseConnection, mock := newMockDatabase(t)
-	manager := NewManager(databaseConnection)
+func TestManagerCommitsSuccessfulOperation(t *testing.T) {
+	manager, fallbackQueries, mock := newMockDatabase(t)
+	mock.ExpectBegin()
+	mock.ExpectCommit()
 
-	t.Run("commit", func(t *testing.T) {
-		mock.ExpectBegin()
-		mock.ExpectCommit()
-		err := manager.Execute(context.Background(), func(transactionContext context.Context) error {
-			resolved := DatabaseConnection(transactionContext, databaseConnection)
-			if resolved == nil {
-				t.Fatal("DatabaseConnection() = nil")
-			}
-			if resolved.Statement.ConnPool == databaseConnection.Statement.ConnPool {
-				t.Fatal("DatabaseConnection() returned the fallback connection")
+	errorValue := manager.Execute(
+		context.Background(),
+		func(transactionContext context.Context) error {
+			resolvedQueries := Queries(transactionContext, fallbackQueries)
+			if resolvedQueries == fallbackQueries {
+				t.Fatal("Queries() returned the fallback outside the SQL transaction")
 			}
 			return nil
-		})
-		if err != nil {
-			t.Fatalf("Execute() error = %v", err)
+		},
+	)
+	if errorValue != nil {
+		t.Fatalf("Execute() error = %v", errorValue)
+	}
+
+	if errorValue := mock.ExpectationsWereMet(); errorValue != nil {
+		t.Fatal(errorValue)
+	}
+}
+
+func TestManagerRollsBackFailedOperation(t *testing.T) {
+	manager, _, mock := newMockDatabase(t)
+	expectedError := errors.New("operation failed")
+	mock.ExpectBegin()
+	mock.ExpectRollback()
+
+	errorValue := manager.Execute(
+		context.Background(),
+		func(context.Context) error { return expectedError },
+	)
+	if !errors.Is(errorValue, expectedError) {
+		t.Fatalf("Execute() error = %v", errorValue)
+	}
+
+	if errorValue := mock.ExpectationsWereMet(); errorValue != nil {
+		t.Fatal(errorValue)
+	}
+}
+
+func TestManagerReportsTransactionErrors(t *testing.T) {
+	t.Run("begin", func(t *testing.T) {
+		manager, _, mock := newMockDatabase(t)
+		expectedError := errors.New("begin failed")
+		mock.ExpectBegin().WillReturnError(expectedError)
+
+		if errorValue := manager.Execute(context.Background(), func(context.Context) error {
+			return nil
+		}); !errors.Is(errorValue, expectedError) {
+			t.Fatalf("Execute() error = %v", errorValue)
 		}
 	})
 
 	t.Run("rollback", func(t *testing.T) {
-		expectedError := errors.New("operation failed")
+		manager, _, mock := newMockDatabase(t)
+		operationError := errors.New("operation failed")
+		rollbackError := errors.New("rollback failed")
 		mock.ExpectBegin()
-		mock.ExpectRollback()
-		err := manager.Execute(context.Background(), func(context.Context) error {
-			return expectedError
-		})
-		if !errors.Is(err, expectedError) {
-			t.Fatalf("Execute() error = %v", err)
+		mock.ExpectRollback().WillReturnError(rollbackError)
+
+		if errorValue := manager.Execute(context.Background(), func(context.Context) error {
+			return operationError
+		}); !errors.Is(errorValue, rollbackError) {
+			t.Fatalf("Execute() error = %v", errorValue)
 		}
 	})
 
-	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Fatal(err)
-	}
+	t.Run("commit", func(t *testing.T) {
+		manager, _, mock := newMockDatabase(t)
+		expectedError := errors.New("commit failed")
+		mock.ExpectBegin()
+		mock.ExpectCommit().WillReturnError(expectedError)
+
+		if errorValue := manager.Execute(context.Background(), func(context.Context) error {
+			return nil
+		}); !errors.Is(errorValue, expectedError) {
+			t.Fatalf("Execute() error = %v", errorValue)
+		}
+	})
 }
 
-func TestDatabaseConnectionUsesFallback(t *testing.T) {
-	databaseConnection, mock := newMockDatabase(t)
-	resolved := DatabaseConnection(context.Background(), databaseConnection)
-	if resolved == nil {
-		t.Fatal("DatabaseConnection() = nil")
-	}
-	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Fatal(err)
+func TestQueriesUsesFallbackWithoutTransaction(t *testing.T) {
+	_, fallbackQueries, _ := newMockDatabase(t)
+	if resolvedQueries := Queries(context.Background(), fallbackQueries); resolvedQueries != fallbackQueries {
+		t.Fatal("Queries() did not return the fallback")
 	}
 }

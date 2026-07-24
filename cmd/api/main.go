@@ -2,29 +2,31 @@ package main
 
 import (
 	"log/slog"
+	"net/http"
 	"os"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
 
 	authenticationtransport "github.com/afraniocaires/ecommerce/internal/authentication/adapter/http"
-	"github.com/afraniocaires/ecommerce/internal/authentication/adapter/repository/gorm"
+	authenticationrepository "github.com/afraniocaires/ecommerce/internal/authentication/adapter/repository/sqlc"
 	authenticationusecase "github.com/afraniocaires/ecommerce/internal/authentication/usecase"
 	catalogtransport "github.com/afraniocaires/ecommerce/internal/catalog/adapter/http"
-	"github.com/afraniocaires/ecommerce/internal/catalog/adapter/repository/gorm"
+	catalogrepository "github.com/afraniocaires/ecommerce/internal/catalog/adapter/repository/sqlc"
 	catalogusecase "github.com/afraniocaires/ecommerce/internal/catalog/usecase"
 	checkouttransport "github.com/afraniocaires/ecommerce/internal/checkout/adapter/http"
 	checkoutusecase "github.com/afraniocaires/ecommerce/internal/checkout/usecase"
 	inventorytransport "github.com/afraniocaires/ecommerce/internal/inventory/adapter/http"
-	"github.com/afraniocaires/ecommerce/internal/inventory/adapter/repository/gorm"
+	inventoryrepository "github.com/afraniocaires/ecommerce/internal/inventory/adapter/repository/sqlc"
 	inventoryusecase "github.com/afraniocaires/ecommerce/internal/inventory/usecase"
 	ordertransport "github.com/afraniocaires/ecommerce/internal/order/adapter/http"
-	"github.com/afraniocaires/ecommerce/internal/order/adapter/repository/gorm"
+	orderrepository "github.com/afraniocaires/ecommerce/internal/order/adapter/repository/sqlc"
 	orderusecase "github.com/afraniocaires/ecommerce/internal/order/usecase"
-	"github.com/afraniocaires/ecommerce/internal/payment/adapter/repository/gorm"
+	paymentrepository "github.com/afraniocaires/ecommerce/internal/payment/adapter/repository/sqlc"
 	paymentusecase "github.com/afraniocaires/ecommerce/internal/payment/usecase"
 	"github.com/afraniocaires/ecommerce/internal/platform/configuration"
 	"github.com/afraniocaires/ecommerce/internal/platform/database"
+	databasequeries "github.com/afraniocaires/ecommerce/internal/platform/database/sqlc"
 	"github.com/afraniocaires/ecommerce/internal/platform/security"
 	"github.com/afraniocaires/ecommerce/internal/platform/transaction"
 )
@@ -52,14 +54,11 @@ func main() {
 		slog.Error("The PostgreSQL connection could not be created.", "error", errorValue)
 		os.Exit(1)
 	}
+	defer databaseConnection.Close()
 
-	errorValue = databaseConnection.AutoMigrate(
-		&authenticationrepository.UserModel{},
-		&catalogrepository.ProductModel{},
-		&inventoryrepository.StockModel{},
-		&orderrepository.OrderModel{},
-		&orderrepository.OrderItemModel{},
-		&paymentrepository.PaymentModel{},
+	errorValue = database.ApplyMigrations(
+		databaseConnection,
+		database.MigrationDirectionUp,
 	)
 	if errorValue != nil {
 		slog.Error("The database schema could not be migrated.", "error", errorValue)
@@ -67,6 +66,7 @@ func main() {
 	}
 
 	currentTime := time.Now
+	queries := databasequeries.New(databaseConnection)
 
 	passwordHasher := security.NewBcryptPasswordHasher(bcrypt.DefaultCost)
 	accessTokenManager := security.NewJSONWebTokenManager(
@@ -75,11 +75,11 @@ func main() {
 		applicationConfiguration.JSONWebTokenLifetime,
 	)
 
-	userRepository := authenticationrepository.NewUserRepository(databaseConnection)
-	productRepository := catalogrepository.NewProductRepository(databaseConnection)
-	stockRepository := inventoryrepository.NewStockRepository(databaseConnection)
-	orderRepository := orderrepository.NewOrderRepository(databaseConnection)
-	paymentRepository := paymentrepository.NewPaymentRepository(databaseConnection)
+	userRepository := authenticationrepository.NewUserRepository(queries)
+	productRepository := catalogrepository.NewProductRepository(queries)
+	stockRepository := inventoryrepository.NewStockRepository(queries)
+	orderRepository := orderrepository.NewOrderRepository(queries)
+	paymentRepository := paymentrepository.NewPaymentRepository(queries)
 
 	transactionManager := transaction.NewManager(databaseConnection)
 
@@ -143,7 +143,16 @@ func main() {
 
 	slog.Info("The HTTP server is running.", "address", ":"+applicationConfiguration.ApplicationPort)
 
-	if errorValue := router.Run(":" + applicationConfiguration.ApplicationPort); errorValue != nil {
+	server := &http.Server{
+		Addr:              ":" + applicationConfiguration.ApplicationPort,
+		Handler:           router,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+
+	if errorValue := server.ListenAndServe(); errorValue != nil {
 		slog.Error("The HTTP server stopped unexpectedly.", "error", errorValue)
 		os.Exit(1)
 	}

@@ -5,8 +5,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gin-gonic/gin"
-
 	"github.com/afraniocaires/ecommerce/internal/checkout/adapter/http/dto"
 	checkoutusecase "github.com/afraniocaires/ecommerce/internal/checkout/usecase"
 	inventorydomain "github.com/afraniocaires/ecommerce/internal/inventory/domain"
@@ -18,43 +16,28 @@ type Handler struct {
 	checkoutUseCase *checkoutusecase.CheckoutUseCase
 }
 
-func NewHandler(
-	checkoutUseCase *checkoutusecase.CheckoutUseCase,
-) *Handler {
+func NewHandler(checkoutUseCase *checkoutusecase.CheckoutUseCase) *Handler {
 	return &Handler{checkoutUseCase: checkoutUseCase}
 }
 
-// Checkout godoc
-// @Summary Create an order
-// @Description Reserves stock, creates an order, and processes its simulated payment in one transaction.
-// @Tags Orders
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param request body dto.CheckoutRequest true "Checkout items"
-// @Success 201 {object} dto.CheckoutResponse
-// @Failure 400 {object} httpresponse.ErrorResponse
-// @Failure 401 {object} httpresponse.ErrorResponse
-// @Failure 404 {object} httpresponse.ErrorResponse
-// @Failure 409 {object} httpresponse.ErrorResponse
-// @Router /api/orders [post]
-func (handler *Handler) Checkout(context *gin.Context) {
-	userID, available := middleware.UserID(context)
+func (handler *Handler) Checkout(
+	responseWriter http.ResponseWriter,
+	request *http.Request,
+) {
+	userID, available := middleware.UserID(request.Context())
 	if !available {
-		context.JSON(http.StatusUnauthorized, httpresponse.ErrorResponse{Error: middleware.ErrMissingIdentity.Error()})
+		httpresponse.JSON(responseWriter, http.StatusUnauthorized, httpresponse.ErrorResponse{Error: middleware.ErrMissingIdentity.Error()})
 		return
 	}
 
-	var request dto.CheckoutRequest
-
-	if errorValue := context.ShouldBindJSON(&request); errorValue != nil {
-		context.JSON(http.StatusBadRequest, httpresponse.ErrorResponse{Error: "the JSON request body is invalid."})
+	var checkoutRequest dto.CheckoutRequest
+	if errorValue := httpresponse.DecodeJSON(responseWriter, request, &checkoutRequest); errorValue != nil {
+		httpresponse.JSON(responseWriter, http.StatusBadRequest, httpresponse.ErrorResponse{Error: "the JSON request body is invalid."})
 		return
 	}
 
-	checkoutItems := make([]checkoutusecase.CheckoutItemInput, 0, len(request.Items))
-
-	for _, requestItem := range request.Items {
+	checkoutItems := make([]checkoutusecase.CheckoutItemInput, 0, len(checkoutRequest.Items))
+	for _, requestItem := range checkoutRequest.Items {
 		checkoutItems = append(checkoutItems, checkoutusecase.CheckoutItemInput{
 			ProductID: requestItem.ProductID,
 			Quantity:  requestItem.Quantity,
@@ -62,28 +45,31 @@ func (handler *Handler) Checkout(context *gin.Context) {
 	}
 
 	output, errorValue := handler.checkoutUseCase.Execute(
-		context.Request.Context(),
-		checkoutusecase.CheckoutInput{
-			UserID: userID,
-			Items:  checkoutItems,
-		},
+		request.Context(),
+		checkoutusecase.CheckoutInput{UserID: userID, Items: checkoutItems},
 	)
 	if errorValue != nil {
-		statusCode := http.StatusBadRequest
-
-		if errors.Is(errorValue, inventorydomain.ErrInsufficientStock) {
+		statusCode := http.StatusInternalServerError
+		message := "an unexpected error occurred."
+		switch {
+		case errors.Is(errorValue, inventorydomain.ErrInsufficientStock):
 			statusCode = http.StatusConflict
-		}
-		if errors.Is(errorValue, checkoutusecase.ErrCheckoutProductNotFound) {
+			message = errorValue.Error()
+		case errors.Is(errorValue, checkoutusecase.ErrCheckoutProductNotFound):
 			statusCode = http.StatusNotFound
+			message = errorValue.Error()
+		case errors.Is(errorValue, checkoutusecase.ErrEmptyCheckoutItems),
+			errors.Is(errorValue, checkoutusecase.ErrInvalidCheckoutItem),
+			errors.Is(errorValue, checkoutusecase.ErrInactiveCheckoutProduct):
+			statusCode = http.StatusBadRequest
+			message = errorValue.Error()
 		}
 
-		context.JSON(statusCode, httpresponse.ErrorResponse{Error: errorValue.Error()})
+		httpresponse.JSON(responseWriter, statusCode, httpresponse.ErrorResponse{Error: message})
 		return
 	}
 
 	itemResponses := make([]dto.CheckoutItemResponse, 0, len(output.Order.Items))
-
 	for _, orderItem := range output.Order.Items {
 		itemResponses = append(itemResponses, dto.CheckoutItemResponse{
 			ProductID:      orderItem.ProductID,
@@ -94,7 +80,7 @@ func (handler *Handler) Checkout(context *gin.Context) {
 		})
 	}
 
-	context.JSON(http.StatusCreated, dto.CheckoutResponse{
+	httpresponse.JSON(responseWriter, http.StatusCreated, dto.CheckoutResponse{
 		OrderID:          output.Order.ID,
 		OrderStatus:      string(output.Order.Status),
 		PaymentID:        output.Payment.ID,

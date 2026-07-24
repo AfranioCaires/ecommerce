@@ -5,7 +5,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 
 	authenticationtransport "github.com/afraniocaires/ecommerce/internal/authentication/adapter/http"
@@ -16,10 +15,7 @@ import (
 	"github.com/afraniocaires/ecommerce/internal/platform/security"
 )
 
-type accessTokenParserStub struct {
-	claims *security.AccessTokenClaims
-	err    error
-}
+type accessTokenParserStub struct{}
 
 func (accessTokenParserStub) Parse(string) (*security.AccessTokenClaims, error) {
 	return &security.AccessTokenClaims{
@@ -31,40 +27,36 @@ func (accessTokenParserStub) Parse(string) (*security.AccessTokenClaims, error) 
 }
 
 func TestRegisterRoutes(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	router := gin.New()
-	apiRoutes := router.Group("/api")
-
-	RegisterAuthenticationRoutes(apiRoutes, authenticationtransport.NewHandler(nil, nil))
-	RegisterCatalogRoutes(apiRoutes, catalogtransport.NewHandler(nil, nil, nil), accessTokenParserStub{})
-	RegisterInventoryRoutes(apiRoutes, inventorytransport.NewHandler(nil), accessTokenParserStub{})
+	router := http.NewServeMux()
+	RegisterAuthenticationRoutes(router, authenticationtransport.NewHandler(nil, nil))
+	RegisterCatalogRoutes(router, catalogtransport.NewHandler(nil, nil, nil), accessTokenParserStub{})
+	RegisterInventoryRoutes(router, inventorytransport.NewHandler(nil), accessTokenParserStub{})
 	RegisterOrderRoutes(
-		apiRoutes,
+		router,
 		checkouttransport.NewHandler(nil),
 		ordertransport.NewHandler(nil, nil, nil),
 		accessTokenParserStub{},
 	)
 
-	want := map[string]bool{
-		"POST /api/authentication/register": false,
-		"POST /api/authentication/login":    false,
-		"GET /api/products":                 false,
-		"GET /api/products/:productID":      false,
-		"POST /api/products":                false,
-		"PUT /api/inventory/:productID":     false,
-		"POST /api/orders":                  false,
-		"GET /api/orders":                   false,
-		"GET /api/orders/:orderID":          false,
-	}
-	for _, route := range router.Routes() {
-		key := route.Method + " " + route.Path
-		if _, available := want[key]; available {
-			want[key] = true
-		}
-	}
-	for route, available := range want {
-		if !available {
-			t.Errorf("route %s was not registered", route)
+	for _, route := range []struct {
+		method string
+		path   string
+	}{
+		{http.MethodPost, "/api/authentication/register"},
+		{http.MethodPost, "/api/authentication/login"},
+		{http.MethodGet, "/api/products"},
+		{http.MethodGet, "/api/products/product-1"},
+		{http.MethodPost, "/api/products"},
+		{http.MethodPut, "/api/inventory/product-1"},
+		{http.MethodPost, "/api/orders"},
+		{http.MethodGet, "/api/orders"},
+		{http.MethodGet, "/api/orders/order-1"},
+	} {
+		responseRecorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodOptions, route.path, nil)
+		router.ServeHTTP(responseRecorder, request)
+		if responseRecorder.Code != http.StatusMethodNotAllowed {
+			t.Errorf("%s %s was not registered: OPTIONS returned %d", route.method, route.path, responseRecorder.Code)
 		}
 	}
 

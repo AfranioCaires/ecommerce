@@ -5,8 +5,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gin-gonic/gin"
-
 	"github.com/afraniocaires/ecommerce/internal/authentication/adapter/http/dto"
 	"github.com/afraniocaires/ecommerce/internal/authentication/domain"
 	"github.com/afraniocaires/ecommerce/internal/authentication/usecase"
@@ -39,28 +37,50 @@ func NewHandler(
 // @Failure 400 {object} httpresponse.ErrorResponse
 // @Failure 409 {object} httpresponse.ErrorResponse
 // @Router /api/authentication/register [post]
-func (handler *Handler) Register(context *gin.Context) {
-	var request dto.CredentialsRequest
-
-	if errorValue := context.ShouldBindJSON(&request); errorValue != nil {
-		context.JSON(http.StatusBadRequest, httpresponse.ErrorResponse{Error: "the JSON request body is invalid."})
+func (handler *Handler) Register(
+	responseWriter http.ResponseWriter,
+	request *http.Request,
+) {
+	var credentialsRequest dto.CredentialsRequest
+	if errorValue := httpresponse.DecodeJSON(
+		responseWriter,
+		request,
+		&credentialsRequest,
+	); errorValue != nil {
+		httpresponse.JSON(
+			responseWriter,
+			http.StatusBadRequest,
+			httpresponse.ErrorResponse{Error: "the JSON request body is invalid."},
+		)
 		return
 	}
 
 	user, errorValue := handler.registerUserUseCase.Execute(
-		context.Request.Context(),
+		request.Context(),
 		usecase.RegisterUserInput{
-			Email:    request.Email,
-			Password: request.Password,
+			Email:    credentialsRequest.Email,
+			Password: credentialsRequest.Password,
 		},
 	)
 	if errorValue != nil {
-		statusCode := http.StatusBadRequest
-		if errors.Is(errorValue, domain.ErrEmailAlreadyUsed) {
+		statusCode := http.StatusInternalServerError
+		message := "an unexpected error occurred."
+		switch {
+		case errors.Is(errorValue, domain.ErrEmailAlreadyUsed):
 			statusCode = http.StatusConflict
+			message = errorValue.Error()
+		case errors.Is(errorValue, domain.ErrEmptyEmail),
+			errors.Is(errorValue, domain.ErrEmptyPasswordHash),
+			errors.Is(errorValue, domain.ErrInvalidRole):
+			statusCode = http.StatusBadRequest
+			message = errorValue.Error()
 		}
 
-		context.JSON(statusCode, httpresponse.ErrorResponse{Error: errorValue.Error()})
+		httpresponse.JSON(
+			responseWriter,
+			statusCode,
+			httpresponse.ErrorResponse{Error: message},
+		)
 		return
 	}
 
@@ -69,15 +89,12 @@ func (handler *Handler) Register(context *gin.Context) {
 		roleValues[index] = string(role)
 	}
 
-	context.JSON(
-		http.StatusCreated,
-		dto.UserResponse{
-			ID:        user.ID,
-			Email:     user.Email,
-			Roles:     roleValues,
-			CreatedAt: user.CreatedAt.Format(time.RFC3339),
-		},
-	)
+	httpresponse.JSON(responseWriter, http.StatusCreated, dto.UserResponse{
+		ID:        user.ID,
+		Email:     user.Email,
+		Roles:     roleValues,
+		CreatedAt: user.CreatedAt.Format(time.RFC3339),
+	})
 }
 
 // Login godoc
@@ -91,25 +108,43 @@ func (handler *Handler) Register(context *gin.Context) {
 // @Failure 400 {object} httpresponse.ErrorResponse
 // @Failure 401 {object} httpresponse.ErrorResponse
 // @Router /api/authentication/login [post]
-func (handler *Handler) Login(context *gin.Context) {
-	var request dto.CredentialsRequest
-
-	if errorValue := context.ShouldBindJSON(&request); errorValue != nil {
-		context.JSON(http.StatusBadRequest, httpresponse.ErrorResponse{Error: "the JSON request body is invalid."})
+func (handler *Handler) Login(
+	responseWriter http.ResponseWriter,
+	request *http.Request,
+) {
+	var credentialsRequest dto.CredentialsRequest
+	if errorValue := httpresponse.DecodeJSON(
+		responseWriter,
+		request,
+		&credentialsRequest,
+	); errorValue != nil {
+		httpresponse.JSON(
+			responseWriter,
+			http.StatusBadRequest,
+			httpresponse.ErrorResponse{Error: "the JSON request body is invalid."},
+		)
 		return
 	}
 
 	output, errorValue := handler.loginUserUseCase.Execute(
-		context.Request.Context(),
+		request.Context(),
 		usecase.LoginUserInput{
-			Email:    request.Email,
-			Password: request.Password,
+			Email:    credentialsRequest.Email,
+			Password: credentialsRequest.Password,
 		},
 	)
 	if errorValue != nil {
-		context.JSON(http.StatusUnauthorized, httpresponse.ErrorResponse{Error: domain.ErrInvalidCredentials.Error()})
+		httpresponse.JSON(
+			responseWriter,
+			http.StatusUnauthorized,
+			httpresponse.ErrorResponse{Error: domain.ErrInvalidCredentials.Error()},
+		)
 		return
 	}
 
-	context.JSON(http.StatusOK, dto.AccessTokenResponse{AccessToken: output.AccessToken})
+	httpresponse.JSON(
+		responseWriter,
+		http.StatusOK,
+		dto.AccessTokenResponse{AccessToken: output.AccessToken},
+	)
 }

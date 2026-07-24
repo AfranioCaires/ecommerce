@@ -1,12 +1,9 @@
 package main
 
 import (
-	"github.com/gin-gonic/gin"
-	swaggerfiles "github.com/swaggo/files"
-	ginswagger "github.com/swaggo/gin-swagger"
+	"net/http"
 
 	"github.com/afraniocaires/ecommerce/cmd/api/routes"
-	_ "github.com/afraniocaires/ecommerce/docs/swagger"
 	authenticationtransport "github.com/afraniocaires/ecommerce/internal/authentication/adapter/http"
 	catalogtransport "github.com/afraniocaires/ecommerce/internal/catalog/adapter/http"
 	checkouttransport "github.com/afraniocaires/ecommerce/internal/checkout/adapter/http"
@@ -23,16 +20,19 @@ func newRouter(
 	checkoutHandler *checkouttransport.Handler,
 	orderHandler *ordertransport.Handler,
 	accessTokenParser middleware.AccessTokenParser,
-) *gin.Engine {
-	router := gin.New()
-	router.Use(gin.Logger(), gin.Recovery())
-	router.GET("/health", httpresponse.Health)
-	router.GET("/swagger/*any", ginswagger.WrapHandler(swaggerfiles.Handler))
+) http.Handler {
+	router := http.NewServeMux()
+	router.HandleFunc("GET /health", httpresponse.Health)
 
-	apiRoutes := router.Group("/api")
-	routes.RegisterAuthenticationRoutes(apiRoutes, authenticationHandler)
-	routes.RegisterCatalogRoutes(apiRoutes, productHandler, accessTokenParser)
-	routes.RegisterInventoryRoutes(apiRoutes, inventoryHandler, accessTokenParser)
-	routes.RegisterOrderRoutes(apiRoutes, checkoutHandler, orderHandler, accessTokenParser)
-	return router
+	routes.RegisterAuthenticationRoutes(router, authenticationHandler)
+	routes.RegisterCatalogRoutes(router, productHandler, accessTokenParser)
+	routes.RegisterInventoryRoutes(router, inventoryHandler, accessTokenParser)
+	routes.RegisterOrderRoutes(
+		router,
+		checkoutHandler,
+		orderHandler,
+		accessTokenParser,
+	)
+
+	return middleware.Recover(middleware.Log(router))
 }

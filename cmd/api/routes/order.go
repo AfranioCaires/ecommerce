@@ -1,7 +1,7 @@
 package routes
 
 import (
-	"github.com/gin-gonic/gin"
+	"net/http"
 
 	checkouttransport "github.com/afraniocaires/ecommerce/internal/checkout/adapter/http"
 	ordertransport "github.com/afraniocaires/ecommerce/internal/order/adapter/http"
@@ -9,14 +9,23 @@ import (
 )
 
 func RegisterOrderRoutes(
-	apiRoutes *gin.RouterGroup,
+	router *http.ServeMux,
 	checkoutHandler *checkouttransport.Handler,
 	orderHandler *ordertransport.Handler,
 	accessTokenParser middleware.AccessTokenParser,
 ) {
-	orderRoutes := apiRoutes.Group("/orders")
-	orderRoutes.Use(middleware.RequireAuthentication(accessTokenParser))
-	orderRoutes.POST("", checkoutHandler.Checkout)
-	orderRoutes.GET("", orderHandler.List)
-	orderRoutes.GET("/:orderID", orderHandler.GetByID)
+	authenticationMiddleware := middleware.RequireAuthentication(accessTokenParser)
+
+	router.Handle(
+		"POST /api/orders",
+		authenticationMiddleware(http.HandlerFunc(checkoutHandler.Checkout)),
+	)
+	router.Handle(
+		"GET /api/orders",
+		authenticationMiddleware(http.HandlerFunc(orderHandler.List)),
+	)
+	router.Handle(
+		"GET /api/orders/{orderID}",
+		authenticationMiddleware(http.HandlerFunc(orderHandler.GetByID)),
+	)
 }
