@@ -1,16 +1,16 @@
 # Mini E-commerce em Go
 
-API de um mini e-commerce construída como monólito modular com Go, Gin, PostgreSQL, GORM, JWT e Docker.
+API HTTP de um mini e-commerce construída como monólito modular com Go, `net/http`, PostgreSQL, `sqlc`, JWT e Docker.
 
-O projeto implementa autenticação, catálogo, estoque, pedidos, pagamentos simulados e checkout transacional. A documentação interativa da API é disponibilizada com Swagger.
+O projeto implementa autenticação de clientes, catálogo, estoque, pedidos, pagamentos simulados e checkout transacional. O schema é criado por migrations SQL versionadas; GORM e Gin não são utilizados.
 
 ## Requisitos
 
-Para executar a aplicação localmente, instale:
-
-- Go 1.26.2 ou uma versão compatível;
+- Go 1.26.2 ou compatível;
 - Docker com Docker Compose;
-- Make, caso queira utilizar os comandos padronizados do projeto.
+- Make para os comandos padronizados.
+
+O gerador `sqlc` é executado com versão fixada por `go run`, portanto não exige instalação global.
 
 ## Configuração
 
@@ -31,41 +31,23 @@ JSON_WEB_TOKEN_ISSUER=afranio
 JSON_WEB_TOKEN_LIFETIME=15m
 ```
 
-Altere o segredo JWT antes de utilizar a aplicação fora do ambiente local.
+Troque o segredo JWT antes de usar a aplicação fora do ambiente local.
 
-## Execução local
+## Execução
 
-Inicie apenas o PostgreSQL:
+Inicie o PostgreSQL e execute a API:
 
 ```bash
 make database-up
-```
-
-Execute a API:
-
-```bash
 make run
 ```
 
-O comando equivalente sem Make é:
+A API aplica automaticamente todas as migrations pendentes antes de abrir o servidor em `http://localhost:3000`.
 
-```bash
-go run ./cmd/api
-```
-
-A API ficará disponível em `http://localhost:3000`.
-
-## Execução com Docker Compose
-
-Construa e inicie a aplicação e o PostgreSQL:
+Para executar tudo com Docker Compose:
 
 ```bash
 make compose-up
-```
-
-Para acompanhar os logs:
-
-```bash
 docker compose logs -f application
 ```
 
@@ -75,69 +57,67 @@ Para encerrar os serviços:
 make compose-down
 ```
 
-## Verificação da aplicação
+## Migrations
 
-Consulte o health check:
-
-```bash
-curl http://localhost:3000/health
-```
-
-Resposta esperada:
-
-```json
-{"status":"UP"}
-```
-
-## Swagger
-
-Com a aplicação em execução, acesse:
-
-```text
-http://localhost:3000/swagger/index.html
-```
-
-Para regenerar os arquivos do Swagger após alterar handlers, DTOs ou rotas:
+As migrations reversíveis ficam em `internal/platform/database/migrations` e são incorporadas aos binários da API e do migrador.
 
 ```bash
-make swagger
+make migrate-up
+make migrate-down
 ```
 
-## Testes e análise estática
+A migration inicial cria:
 
-Execute os testes sem utilizar resultados armazenados em cache:
+- `customers`, incluindo `password_hash`;
+- `products` e `stocks`;
+- `orders`, `order_items` e `payments`;
+- chaves estrangeiras entre clientes, pedidos, itens, produtos, estoque e pagamentos;
+- índices usados pelas consultas paginadas.
+
+## sqlc
+
+As queries SQL ficam em `internal/platform/database/queries`. Para regenerar os arquivos Go tipados:
+
+```bash
+make sqlc
+```
+
+Para regenerar e falhar caso o resultado não esteja versionado:
+
+```bash
+make sqlc-check
+```
+
+Os repositories em `adapter/repository/sqlc` usam somente as queries geradas. O checkout compartilha uma `sql.Tx` entre catálogo, estoque, pedido e pagamento; qualquer erro causa rollback.
+
+## Testes e cobertura
 
 ```bash
 make test
-```
-
-Valide a cobertura de todo código manual útil (excluindo apenas o Swagger gerado e o bootstrap do processo):
-
-```bash
 make coverage
-```
-
-O comando falha se a cobertura for diferente de 100,0%.
-
-Execute a análise estática:
-
-```bash
 make vet
-```
-
-Execute formatação, testes e análise estática em sequência:
-
-```bash
 make check
 ```
 
-## Build
+`make coverage` mede statements globalmente com `-coverpkg=./...` e falha abaixo de 40%. Os testes cobrem domínio, casos de uso, SQL/repositories, transações, estoque, handlers, rotas, configuração e banco.
 
-Gere o executável em `bin/ecommerce`:
+## Demonstração HTTP
+
+Com a aplicação e o PostgreSQL do Compose em execução:
+
+```bash
+make demo
+```
+
+O script demonstra health check, cadastro, login, criação de produto, definição de estoque, checkout e listagem com `limit`/`offset`. Também mostra respostas de erro para acesso sem token, JSON inválido e estoque insuficiente.
+
+## Build
 
 ```bash
 make build
 ```
+
+O executável é criado em `bin/ecommerce`.
 
 ## Rotas principais
 
@@ -147,14 +127,14 @@ make build
 | `POST` | `/api/authentication/register` | Público |
 | `POST` | `/api/authentication/login` | Público |
 | `GET` | `/api/products` | Público |
-| `GET` | `/api/products/:productID` | Público |
+| `GET` | `/api/products/{productID}` | Público |
 | `POST` | `/api/products` | Administrador |
-| `PUT` | `/api/inventory/:productID` | Administrador |
+| `PUT` | `/api/inventory/{productID}` | Administrador |
 | `POST` | `/api/orders` | Autenticado |
-| `GET` | `/api/orders` | Autenticado |
-| `GET` | `/api/orders/:orderID` | Autenticado |
+| `GET` | `/api/orders?limit=20&offset=0` | Autenticado |
+| `GET` | `/api/orders/{orderID}` | Autenticado |
 
-Rotas protegidas esperam o token no cabeçalho:
+Rotas protegidas recebem o token no cabeçalho:
 
 ```http
 Authorization: Bearer ACCESS_TOKEN
@@ -163,25 +143,25 @@ Authorization: Bearer ACCESS_TOKEN
 Durante o desenvolvimento, um cliente pode ser promovido a administrador diretamente no PostgreSQL:
 
 ```sql
-UPDATE users
+UPDATE customers
 SET roles = 'CUSTOMER,ADMIN'
 WHERE email = 'administrator@example.com';
 ```
 
-Faça login novamente depois da alteração para receber um token com os papéis atualizados.
+Faça login novamente para emitir um token com os papéis atualizados.
 
 ## Estrutura
 
 ```text
-cmd/api/                         composição, roteador e rotas
-internal/authentication/         cadastro, login e autorização
-internal/catalog/                produtos e paginação
-internal/inventory/              controle e reserva de estoque
-internal/order/                  pedidos e ownership
-internal/payment/                pagamento simulado
-internal/checkout/               fluxo transacional de compra
-internal/platform/               configuração e infraestrutura compartilhada
-docs/swagger/                    documentação Swagger gerada
+cmd/api/                                  bootstrap e roteador net/http
+cmd/migrate/                              executável de migrations
+internal/*/domain/                        entidades e regras de domínio
+internal/*/usecase/                       serviços e casos de uso
+internal/*/adapter/http/                  handlers HTTP
+internal/*/adapter/repository/sqlc/       repositories SQL
+internal/platform/database/migrations/    migrations up/down
+internal/platform/database/queries/       queries consumidas pelo sqlc
+internal/platform/database/sqlc/          código Go gerado
+internal/platform/transaction/            transações compartilhadas
+scripts/http-flow.sh                      fluxo feliz e erros via HTTP
 ```
-
-Cada módulo separa domínio, casos de uso e adapters. As dependências apontam dos adapters para os casos de uso e destes para o domínio.

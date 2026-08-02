@@ -1,4 +1,6 @@
-.PHONY: run build test coverage vet check compose-up compose-down database-up swagger
+SQLC_VERSION := 1.31.1
+
+.PHONY: run build test coverage vet check compose-up compose-down database-up migrate-up migrate-down sqlc sqlc-check demo
 
 run:
 	go run ./cmd/api
@@ -15,10 +17,11 @@ coverage:
 vet:
 	go vet ./...
 
-check:
+check: sqlc-check
 	gofmt -w cmd internal
 	go test -count=1 ./...
 	go vet ./...
+	go build ./...
 
 compose-up:
 	docker compose up --build -d
@@ -29,5 +32,17 @@ compose-down:
 database-up:
 	docker compose up -d postgresql
 
-swagger:
-	go run github.com/swaggo/swag/cmd/swag@v1.16.6 init -g cmd/api/main.go -o docs/swagger --parseInternal
+migrate-up:
+	go run ./cmd/migrate -direction up
+
+migrate-down:
+	go run ./cmd/migrate -direction down
+
+sqlc:
+	go run github.com/sqlc-dev/sqlc/cmd/sqlc@v$(SQLC_VERSION) generate
+
+sqlc-check: sqlc
+	git diff --exit-code -- internal/platform/database/sqlc
+
+demo:
+	./scripts/http-flow.sh
