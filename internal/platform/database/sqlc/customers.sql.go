@@ -11,12 +11,13 @@ import (
 )
 
 const createCustomer = `-- name: CreateCustomer :exec
-INSERT INTO customers (id, email, password_hash, roles, created_at)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO customers (id, name, email, password_hash, roles, created_at)
+VALUES ($1, $2, $3, $4, $5, $6)
 `
 
 type CreateCustomerParams struct {
 	ID           string    `json:"id"`
+	Name         string    `json:"name"`
 	Email        string    `json:"email"`
 	PasswordHash string    `json:"password_hash"`
 	Roles        string    `json:"roles"`
@@ -26,6 +27,7 @@ type CreateCustomerParams struct {
 func (q *Queries) CreateCustomer(ctx context.Context, arg CreateCustomerParams) error {
 	_, err := q.db.ExecContext(ctx, createCustomer,
 		arg.ID,
+		arg.Name,
 		arg.Email,
 		arg.PasswordHash,
 		arg.Roles,
@@ -35,16 +37,26 @@ func (q *Queries) CreateCustomer(ctx context.Context, arg CreateCustomerParams) 
 }
 
 const getCustomerByEmail = `-- name: GetCustomerByEmail :one
-SELECT id, email, password_hash, roles, created_at
+SELECT id, name, email, password_hash, roles, created_at
 FROM customers
 WHERE email = $1
 `
 
-func (q *Queries) GetCustomerByEmail(ctx context.Context, email string) (Customer, error) {
+type GetCustomerByEmailRow struct {
+	ID           string    `json:"id"`
+	Name         string    `json:"name"`
+	Email        string    `json:"email"`
+	PasswordHash string    `json:"password_hash"`
+	Roles        string    `json:"roles"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+func (q *Queries) GetCustomerByEmail(ctx context.Context, email string) (GetCustomerByEmailRow, error) {
 	row := q.db.QueryRowContext(ctx, getCustomerByEmail, email)
-	var i Customer
+	var i GetCustomerByEmailRow
 	err := row.Scan(
 		&i.ID,
+		&i.Name,
 		&i.Email,
 		&i.PasswordHash,
 		&i.Roles,
@@ -54,20 +66,75 @@ func (q *Queries) GetCustomerByEmail(ctx context.Context, email string) (Custome
 }
 
 const getCustomerByID = `-- name: GetCustomerByID :one
-SELECT id, email, password_hash, roles, created_at
+SELECT id, name, email, password_hash, roles, created_at
 FROM customers
 WHERE id = $1
 `
 
-func (q *Queries) GetCustomerByID(ctx context.Context, id string) (Customer, error) {
+type GetCustomerByIDRow struct {
+	ID           string    `json:"id"`
+	Name         string    `json:"name"`
+	Email        string    `json:"email"`
+	PasswordHash string    `json:"password_hash"`
+	Roles        string    `json:"roles"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+func (q *Queries) GetCustomerByID(ctx context.Context, id string) (GetCustomerByIDRow, error) {
 	row := q.db.QueryRowContext(ctx, getCustomerByID, id)
-	var i Customer
+	var i GetCustomerByIDRow
 	err := row.Scan(
 		&i.ID,
+		&i.Name,
 		&i.Email,
 		&i.PasswordHash,
 		&i.Roles,
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const listCustomers = `-- name: ListCustomers :many
+SELECT id, name, email, password_hash, roles, created_at
+FROM customers
+ORDER BY created_at, id
+`
+
+type ListCustomersRow struct {
+	ID           string    `json:"id"`
+	Name         string    `json:"name"`
+	Email        string    `json:"email"`
+	PasswordHash string    `json:"password_hash"`
+	Roles        string    `json:"roles"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+func (q *Queries) ListCustomers(ctx context.Context) ([]ListCustomersRow, error) {
+	rows, err := q.db.QueryContext(ctx, listCustomers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListCustomersRow{}
+	for rows.Next() {
+		var i ListCustomersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Email,
+			&i.PasswordHash,
+			&i.Roles,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

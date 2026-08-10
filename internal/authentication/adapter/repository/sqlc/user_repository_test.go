@@ -30,6 +30,7 @@ func TestUserRepositorySavesCustomerPasswordHash(t *testing.T) {
 	createdAt := time.Date(2026, time.July, 20, 12, 0, 0, 0, time.UTC)
 	user, _ := domain.NewUser(
 		"customer-1",
+		"Customer",
 		"customer@example.com",
 		"password-hash",
 		[]domain.Role{domain.RoleCustomer, domain.RoleAdministrator},
@@ -39,6 +40,7 @@ func TestUserRepositorySavesCustomerPasswordHash(t *testing.T) {
 	mock.ExpectExec("INSERT INTO customers").
 		WithArgs(
 			"customer-1",
+			"Customer",
 			"customer@example.com",
 			"password-hash",
 			"CUSTOMER,ADMIN",
@@ -58,6 +60,7 @@ func TestUserRepositoryMapsUniqueEmailViolation(t *testing.T) {
 	repository, mock := newUserRepository(t)
 	user, _ := domain.NewUser(
 		"customer-1",
+		"Customer",
 		"customer@example.com",
 		"password-hash",
 		[]domain.Role{domain.RoleCustomer},
@@ -75,19 +78,20 @@ func TestUserRepositoryMapsUniqueEmailViolation(t *testing.T) {
 func TestUserRepositoryFindsCustomers(t *testing.T) {
 	repository, mock := newUserRepository(t)
 	createdAt := time.Date(2026, time.July, 20, 12, 0, 0, 0, time.UTC)
-	columns := []string{"id", "email", "password_hash", "roles", "created_at"}
+	columns := []string{"id", "name", "email", "password_hash", "roles", "created_at"}
 
 	mock.ExpectQuery("FROM customers").
 		WithArgs("customer@example.com").
 		WillReturnRows(sqlmock.NewRows(columns).AddRow(
 			"customer-1",
+			"Customer",
 			"customer@example.com",
 			"password-hash",
 			"CUSTOMER,SUPPORT",
 			createdAt,
 		))
 	user, errorValue := repository.FindByEmail(context.Background(), "customer@example.com")
-	if errorValue != nil || user.ID != "customer-1" || user.PasswordHash != "password-hash" || len(user.Roles) != 2 {
+	if errorValue != nil || user.ID != "customer-1" || user.Name != "Customer" || user.PasswordHash != "password-hash" || len(user.Roles) != 2 {
 		t.Fatalf("FindByEmail() = %#v, %v", user, errorValue)
 	}
 

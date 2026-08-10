@@ -11,6 +11,7 @@ type UserRepository interface {
 	Save(context context.Context, user *domain.User) error
 	FindByEmail(context context.Context, email string) (*domain.User, error)
 	FindByID(context context.Context, userID string) (*domain.User, error)
+	FindAll(context context.Context) ([]*domain.User, error)
 }
 
 type PasswordHasher interface {

@@ -2,6 +2,7 @@ package authenticationrepository
 
 import (
 	"context"
+	"sort"
 	"strings"
 	"sync"
 
@@ -62,6 +63,25 @@ func (repository *UserRepository) FindByID(applicationContext context.Context, u
 	}
 	userCopy := copyUser(&user)
 	return &userCopy, nil
+}
+
+func (repository *UserRepository) FindAll(applicationContext context.Context) ([]*domain.User, error) {
+	_ = applicationContext
+	repository.mutex.RLock()
+	defer repository.mutex.RUnlock()
+
+	users := make([]*domain.User, 0, len(repository.usersByID))
+	for _, storedUser := range repository.usersByID {
+		user := copyUser(&storedUser)
+		users = append(users, &user)
+	}
+	sort.Slice(users, func(first, second int) bool {
+		if users[first].CreatedAt.Equal(users[second].CreatedAt) {
+			return users[first].ID < users[second].ID
+		}
+		return users[first].CreatedAt.Before(users[second].CreatedAt)
+	})
+	return users, nil
 }
 
 func copyUser(user *domain.User) domain.User {

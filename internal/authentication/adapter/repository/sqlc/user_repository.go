@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
 
@@ -31,6 +32,7 @@ func (repository *UserRepository) Save(
 		applicationContext,
 		databasequeries.CreateCustomerParams{
 			ID:           user.ID,
+			Name:         user.Name,
 			Email:        user.Email,
 			PasswordHash: user.PasswordHash,
 			Roles:        roleValues(user.Roles),
@@ -44,6 +46,32 @@ func (repository *UserRepository) Save(
 	}
 
 	return errorValue
+}
+
+func (repository *UserRepository) FindAll(
+	applicationContext context.Context,
+) ([]*domain.User, error) {
+	customers, errorValue := repository.queries.ListCustomers(applicationContext)
+	if errorValue != nil {
+		return nil, errorValue
+	}
+
+	users := make([]*domain.User, 0, len(customers))
+	for _, customer := range customers {
+		user, errorValue := toUser(
+			customer.ID,
+			customer.Name,
+			customer.Email,
+			customer.PasswordHash,
+			customer.Roles,
+			customer.CreatedAt,
+		)
+		if errorValue != nil {
+			return nil, errorValue
+		}
+		users = append(users, user)
+	}
+	return users, nil
 }
 
 func (repository *UserRepository) FindByEmail(
@@ -61,7 +89,7 @@ func (repository *UserRepository) FindByEmail(
 		return nil, errorValue
 	}
 
-	return toUser(customer)
+	return toUser(customer.ID, customer.Name, customer.Email, customer.PasswordHash, customer.Roles, customer.CreatedAt)
 }
 
 func (repository *UserRepository) FindByID(
@@ -79,7 +107,7 @@ func (repository *UserRepository) FindByID(
 		return nil, errorValue
 	}
 
-	return toUser(customer)
+	return toUser(customer.ID, customer.Name, customer.Email, customer.PasswordHash, customer.Roles, customer.CreatedAt)
 }
 
 func roleValues(roles []domain.Role) string {
@@ -91,8 +119,15 @@ func roleValues(roles []domain.Role) string {
 	return strings.Join(values, ",")
 }
 
-func toUser(customer databasequeries.Customer) (*domain.User, error) {
-	roleParts := strings.Split(customer.Roles, ",")
+func toUser(
+	userID string,
+	name string,
+	email string,
+	passwordHash string,
+	roleValues string,
+	createdAt time.Time,
+) (*domain.User, error) {
+	roleParts := strings.Split(roleValues, ",")
 	roles := make([]domain.Role, 0, len(roleParts))
 	for _, rolePart := range roleParts {
 		if rolePart != "" {
@@ -101,10 +136,11 @@ func toUser(customer databasequeries.Customer) (*domain.User, error) {
 	}
 
 	return domain.NewUser(
-		customer.ID,
-		customer.Email,
-		customer.PasswordHash,
+		userID,
+		name,
+		email,
+		passwordHash,
 		roles,
-		customer.CreatedAt,
+		createdAt,
 	)
 }

@@ -12,6 +12,7 @@ import (
 )
 
 type RegisterUserInput struct {
+	Name     string
 	Email    string
 	Password string
 }
@@ -39,6 +40,10 @@ func (useCase *RegisterUserUseCase) Execute(
 	input RegisterUserInput,
 ) (*domain.User, error) {
 	normalizedEmail := strings.ToLower(strings.TrimSpace(input.Email))
+	normalizedName := strings.TrimSpace(input.Name)
+	if normalizedName == "" {
+		normalizedName = strings.SplitN(normalizedEmail, "@", 2)[0]
+	}
 
 	existingUser, errorValue := useCase.userRepository.FindByEmail(
 		context,
@@ -58,6 +63,7 @@ func (useCase *RegisterUserUseCase) Execute(
 
 	user, errorValue := domain.NewUser(
 		uuid.NewString(),
+		normalizedName,
 		normalizedEmail,
 		passwordHash,
 		[]domain.Role{domain.RoleCustomer},

@@ -9,6 +9,7 @@ import (
 
 var (
 	ErrEmptyUserID        = errors.New("the user ID must not be empty.")
+	ErrEmptyUserName      = errors.New("the user name must not be empty.")
 	ErrEmptyEmail         = errors.New("the email must not be empty.")
 	ErrEmptyPasswordHash  = errors.New("the password hash must not be empty.")
 	ErrEmailAlreadyUsed   = errors.New("the email is already registered.")
@@ -18,6 +19,7 @@ var (
 
 type User struct {
 	ID           string
+	Name         string
 	Email        string
 	PasswordHash string
 	Roles        []Role
@@ -26,6 +28,7 @@ type User struct {
 
 func NewUser(
 	userID string,
+	name string,
 	email string,
 	passwordHash string,
 	roles []Role,
@@ -34,10 +37,14 @@ func NewUser(
 	if strings.TrimSpace(userID) == "" {
 		return nil, ErrEmptyUserID
 	}
-
 	normalizedEmail := strings.ToLower(strings.TrimSpace(email))
 	if normalizedEmail == "" {
 		return nil, ErrEmptyEmail
+	}
+
+	normalizedName := strings.TrimSpace(name)
+	if normalizedName == "" {
+		return nil, ErrEmptyUserName
 	}
 
 	if passwordHash == "" {
@@ -56,6 +63,7 @@ func NewUser(
 
 	return &User{
 		ID:           userID,
+		Name:         normalizedName,
 		Email:        normalizedEmail,
 		PasswordHash: passwordHash,
 		Roles:        roles,

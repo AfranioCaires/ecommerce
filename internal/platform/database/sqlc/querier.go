@@ -14,13 +14,14 @@ type Querier interface {
 	CreateOrder(ctx context.Context, arg CreateOrderParams) error
 	CreateOrderItem(ctx context.Context, arg CreateOrderItemParams) error
 	CreatePayment(ctx context.Context, arg CreatePaymentParams) error
-	GetCustomerByEmail(ctx context.Context, email string) (Customer, error)
-	GetCustomerByID(ctx context.Context, id string) (Customer, error)
+	GetCustomerByEmail(ctx context.Context, email string) (GetCustomerByEmailRow, error)
+	GetCustomerByID(ctx context.Context, id string) (GetCustomerByIDRow, error)
 	GetOrderByID(ctx context.Context, id string) (Order, error)
 	GetProductByID(ctx context.Context, id string) (Product, error)
 	GetStockByProductID(ctx context.Context, productID string) (Stock, error)
 	GetStockByProductIDForUpdate(ctx context.Context, productID string) (Stock, error)
 	ListActiveProducts(ctx context.Context, arg ListActiveProductsParams) ([]Product, error)
+	ListCustomers(ctx context.Context) ([]ListCustomersRow, error)
 	ListOrderItemsByOrderIDs(ctx context.Context, orderIds []string) ([]OrderItem, error)
 	ListOrders(ctx context.Context, arg ListOrdersParams) ([]Order, error)
 	ListOrdersByCustomer(ctx context.Context, arg ListOrdersByCustomerParams) ([]Order, error)

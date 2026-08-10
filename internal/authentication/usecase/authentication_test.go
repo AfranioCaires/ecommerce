@@ -23,8 +23,8 @@ func TestAuthenticationUseCases(t *testing.T) {
 	loginUserUseCase := usecase.NewLoginUserUseCase(userRepository, passwordHasher, accessTokenManager, currentTime)
 
 	t.Run("it should register and authenticate a customer", func(t *testing.T) {
-		user, errorValue := registerUserUseCase.Execute(context.Background(), usecase.RegisterUserInput{Email: " Customer@Example.com ", Password: "password"})
-		if errorValue != nil || user.Email != "customer@example.com" || !user.HasRole(domain.RoleCustomer) {
+		user, errorValue := registerUserUseCase.Execute(context.Background(), usecase.RegisterUserInput{Name: " Customer ", Email: " Customer@Example.com ", Password: "password"})
+		if errorValue != nil || user.Name != "Customer" || user.Email != "customer@example.com" || !user.HasRole(domain.RoleCustomer) {
 			t.Fatalf("unexpected registration: %#v, %v", user, errorValue)
 		}
 		output, errorValue := loginUserUseCase.Execute(context.Background(), usecase.LoginUserInput{Email: user.Email, Password: "password"})
@@ -66,6 +66,10 @@ func (stub userRepositoryStub) FindByEmail(_ context.Context, email string) (*do
 
 func (stub userRepositoryStub) FindByID(context.Context, string) (*domain.User, error) {
 	return nil, domain.ErrUserNotFound
+}
+
+func (stub userRepositoryStub) FindAll(context.Context) ([]*domain.User, error) {
+	return []*domain.User{}, nil
 }
 
 type passwordHasherStub struct {
@@ -139,7 +143,7 @@ func TestRegisterUserErrors(t *testing.T) {
 
 func TestLoginUserErrors(t *testing.T) {
 	expectedError := errors.New("token failed")
-	user, _ := domain.NewUser("user-1", "a@example.com", "hash", nil, time.Now())
+	user, _ := domain.NewUser("user-1", "Customer", "a@example.com", "hash", nil, time.Now())
 	currentTime := func() time.Time { return time.Date(2026, 7, 12, 12, 0, 0, 0, time.UTC) }
 
 	t.Run("it should hide lookup errors", func(t *testing.T) {

@@ -14,6 +14,7 @@ type Customer struct {
 	PasswordHash string    `json:"password_hash"`
 	Roles        string    `json:"roles"`
 	CreatedAt    time.Time `json:"created_at"`
+	Name         string    `json:"name"`
 }
 
 type Order struct {

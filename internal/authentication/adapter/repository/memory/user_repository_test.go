@@ -12,7 +12,7 @@ import (
 func TestUserRepository(t *testing.T) {
 	t.Run("it should save and find a user by normalized email", func(t *testing.T) {
 		repository := NewUserRepository()
-		user, _ := domain.NewUser("user-1", "customer@example.com", "hash", nil, time.Now())
+		user, _ := domain.NewUser("user-1", "Customer", "customer@example.com", "hash", nil, time.Now())
 		if errorValue := repository.Save(context.Background(), user); errorValue != nil {
 			t.Fatal(errorValue)
 		}
@@ -24,8 +24,8 @@ func TestUserRepository(t *testing.T) {
 
 	t.Run("it should reject a duplicate email", func(t *testing.T) {
 		repository := NewUserRepository()
-		firstUser, _ := domain.NewUser("user-1", "customer@example.com", "hash", nil, time.Now())
-		secondUser, _ := domain.NewUser("user-2", "customer@example.com", "hash", nil, time.Now())
+		firstUser, _ := domain.NewUser("user-1", "Customer", "customer@example.com", "hash", nil, time.Now())
+		secondUser, _ := domain.NewUser("user-2", "Other", "customer@example.com", "hash", nil, time.Now())
 		repository.Save(context.Background(), firstUser)
 		errorValue := repository.Save(context.Background(), secondUser)
 		if !errors.Is(errorValue, domain.ErrEmailAlreadyUsed) {
@@ -35,7 +35,7 @@ func TestUserRepository(t *testing.T) {
 
 	t.Run("it should find a user by ID and return independent role slices", func(t *testing.T) {
 		repository := NewUserRepository()
-		user, _ := domain.NewUser("user-1", "customer@example.com", "hash", []domain.Role{domain.RoleCustomer}, time.Now())
+		user, _ := domain.NewUser("user-1", "Customer", "customer@example.com", "hash", []domain.Role{domain.RoleCustomer}, time.Now())
 		if errorValue := repository.Save(context.Background(), user); errorValue != nil {
 			t.Fatal(errorValue)
 		}
