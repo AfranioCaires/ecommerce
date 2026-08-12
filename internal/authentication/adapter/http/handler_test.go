@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -22,10 +23,15 @@ func TestHandler(t *testing.T) {
 	accessTokenManager := security.NewJSONWebTokenManager("secret", "ecommerce", time.Hour)
 	registerUserUseCase := usecase.NewRegisterUserUseCase(userRepository, passwordHasher, time.Now)
 	loginUserUseCase := usecase.NewLoginUserUseCase(userRepository, passwordHasher, accessTokenManager, time.Now)
-	handler := NewHandler(registerUserUseCase, loginUserUseCase)
+	getUserUseCase := usecase.NewGetUserUseCase(userRepository)
+	listUsersUseCase := usecase.NewListUsersUseCase(userRepository)
+	handler := NewHandler(registerUserUseCase, loginUserUseCase, getUserUseCase, listUsersUseCase)
 	router := http.NewServeMux()
 	router.HandleFunc("POST /register", handler.Register)
 	router.HandleFunc("POST /login", handler.Login)
+	router.HandleFunc("POST /customers", handler.CreateCustomer)
+	router.HandleFunc("GET /customers", handler.ListCustomers)
+	router.HandleFunc("GET /customers/{customerID}", handler.GetCustomer)
 
 	t.Run("it should register a customer", func(t *testing.T) {
 		responseRecorder := performJSONRequest(router, http.MethodPost, "/register", dto.CredentialsRequest{Email: "customer@example.com", Password: "password"})
@@ -35,6 +41,42 @@ func TestHandler(t *testing.T) {
 		var response dto.UserResponse
 		if errorValue := json.Unmarshal(responseRecorder.Body.Bytes(), &response); errorValue != nil || response.Email != "customer@example.com" {
 			t.Fatalf("unexpected response: %#v, %v", response, errorValue)
+		}
+	})
+
+	t.Run("it should create list and get challenge customers without exposing passwords", func(t *testing.T) {
+		created := performJSONRequest(router, http.MethodPost, "/customers", dto.CreateCustomerRequest{
+			Name: "Ada Lovelace", Email: "ada@example.com", PasswordHash: "password",
+		})
+		if created.Code != http.StatusCreated || strings.Contains(created.Body.String(), "password") {
+			t.Fatalf("unexpected create response: %d %s", created.Code, created.Body.String())
+		}
+		var customer dto.UserResponse
+		if err := json.Unmarshal(created.Body.Bytes(), &customer); err != nil || customer.Name != "Ada Lovelace" {
+			t.Fatalf("unexpected customer: %#v, %v", customer, err)
+		}
+
+		listed := performJSONRequest(router, http.MethodGet, "/customers", nil)
+		if listed.Code != http.StatusOK || !strings.Contains(listed.Body.String(), "ada@example.com") || strings.Contains(listed.Body.String(), "password") {
+			t.Fatalf("unexpected list response: %d %s", listed.Code, listed.Body.String())
+		}
+
+		found := performJSONRequest(router, http.MethodGet, "/customers/"+customer.ID, nil)
+		if found.Code != http.StatusOK || !strings.Contains(found.Body.String(), "Ada Lovelace") {
+			t.Fatalf("unexpected get response: %d %s", found.Code, found.Body.String())
+		}
+	})
+
+	t.Run("it should validate challenge customer credentials", func(t *testing.T) {
+		for _, request := range []dto.CreateCustomerRequest{
+			{Name: "Missing", Email: "missing@example.com"},
+			{Name: "Both", Email: "both@example.com", Password: "one", PasswordHash: "two"},
+			{Email: "nameless@example.com", Password: "password"},
+		} {
+			response := performJSONRequest(router, http.MethodPost, "/customers", request)
+			if response.Code != http.StatusBadRequest {
+				t.Fatalf("expected bad request, received %d: %s", response.Code, response.Body.String())
+			}
 		}
 	})
 

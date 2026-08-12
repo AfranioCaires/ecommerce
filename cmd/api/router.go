@@ -33,6 +33,7 @@ func newRouter(
 		orderHandler,
 		accessTokenParser,
 	)
+	routes.RegisterChallengeRoutes(router, authenticationHandler, productHandler, checkoutHandler, orderHandler)
 
 	return middleware.Recover(middleware.Log(router))
 }

@@ -28,8 +28,11 @@ func (accessTokenParserStub) Parse(string) (*security.AccessTokenClaims, error) 
 
 func TestRegisterRoutes(t *testing.T) {
 	router := http.NewServeMux()
-	RegisterAuthenticationRoutes(router, authenticationtransport.NewHandler(nil, nil))
-	RegisterCatalogRoutes(router, catalogtransport.NewHandler(nil, nil, nil), accessTokenParserStub{})
+	authenticationHandler := authenticationtransport.NewHandler(nil, nil, nil, nil)
+	productHandler := catalogtransport.NewHandler(nil, nil, nil)
+	RegisterAuthenticationRoutes(router, authenticationHandler)
+	RegisterCatalogRoutes(router, productHandler, accessTokenParserStub{})
+	RegisterChallengeRoutes(router, authenticationHandler, productHandler, checkouttransport.NewHandler(nil), ordertransport.NewHandler(nil, nil, nil))
 	RegisterInventoryRoutes(router, inventorytransport.NewHandler(nil), accessTokenParserStub{})
 	RegisterOrderRoutes(
 		router,

@@ -2,6 +2,7 @@ package dto
 
 type UserResponse struct {
 	ID        string   `json:"id"`
+	Name      string   `json:"name"`
 	Email     string   `json:"email"`
 	Roles     []string `json:"roles"`
 	CreatedAt string   `json:"created_at"`

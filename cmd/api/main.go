@@ -94,6 +94,8 @@ func main() {
 		accessTokenManager,
 		currentTime,
 	)
+	getUserUseCase := authenticationusecase.NewGetUserUseCase(userRepository)
+	listUsersUseCase := authenticationusecase.NewListUsersUseCase(userRepository)
 
 	createProductUseCase := catalogusecase.NewCreateProductUseCase(
 		productRepository,
@@ -126,7 +128,7 @@ func main() {
 	listUserOrdersUseCase := orderusecase.NewListUserOrdersUseCase(orderRepository)
 	listAllOrdersUseCase := orderusecase.NewListAllOrdersUseCase(orderRepository)
 
-	authenticationHandler := authenticationtransport.NewHandler(registerUserUseCase, loginUserUseCase)
+	authenticationHandler := authenticationtransport.NewHandler(registerUserUseCase, loginUserUseCase, getUserUseCase, listUsersUseCase)
 	productHandler := catalogtransport.NewHandler(createProductUseCase, getProductUseCase, listProductsUseCase)
 	inventoryHandler := inventorytransport.NewHandler(inventoryService)
 	checkoutHandler := checkouttransport.NewHandler(checkoutUseCase)
