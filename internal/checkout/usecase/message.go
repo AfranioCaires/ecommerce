@@ -2,7 +2,6 @@ package usecase
 
 import (
 	orderdomain "github.com/afraniocaires/ecommerce/internal/order/domain"
-	paymentdomain "github.com/afraniocaires/ecommerce/internal/payment/domain"
 )
 
 type CheckoutItemInput struct {
@@ -16,6 +15,5 @@ type CheckoutInput struct {
 }
 
 type CheckoutOutput struct {
-	Order   *orderdomain.Order
-	Payment *paymentdomain.Payment
+	Order *orderdomain.Order
 }

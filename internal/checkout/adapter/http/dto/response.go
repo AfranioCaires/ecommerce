@@ -11,8 +11,6 @@ type CheckoutItemResponse struct {
 type CheckoutResponse struct {
 	OrderID          string                 `json:"order_id"`
 	OrderStatus      string                 `json:"order_status"`
-	PaymentID        string                 `json:"payment_id"`
-	PaymentStatus    string                 `json:"payment_status"`
 	TotalAmountCents int64                  `json:"total_amount_cents"`
 	Items            []CheckoutItemResponse `json:"items"`
 	CreatedAt        string                 `json:"created_at"`

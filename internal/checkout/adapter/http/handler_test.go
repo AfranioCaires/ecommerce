@@ -17,16 +17,18 @@ import (
 	inventorydomain "github.com/afraniocaires/ecommerce/internal/inventory/domain"
 	inventoryusecase "github.com/afraniocaires/ecommerce/internal/inventory/usecase"
 	orderdomain "github.com/afraniocaires/ecommerce/internal/order/domain"
-	paymentdomain "github.com/afraniocaires/ecommerce/internal/payment/domain"
 	"github.com/afraniocaires/ecommerce/internal/platform/middleware"
 	"github.com/afraniocaires/ecommerce/internal/platform/security"
 )
 
 type checkoutDependencies struct {
-	products      []*catalogdomain.Product
-	paymentStatus paymentdomain.PaymentStatus
-	findError     error
-	reserveError  error
+	products     []*catalogdomain.Product
+	findError    error
+	reserveError error
+}
+
+func (dependencies *checkoutDependencies) FindByID(context.Context, string) (*authenticationdomain.User, error) {
+	return &authenticationdomain.User{ID: "user-1"}, nil
 }
 
 func (dependencies *checkoutDependencies) FindByIDs(context.Context, []string) ([]*catalogdomain.Product, error) {
@@ -43,9 +45,6 @@ func (dependencies *checkoutDependencies) Save(context.Context, *orderdomain.Ord
 }
 func (dependencies *checkoutDependencies) UpdateStatus(context.Context, *orderdomain.Order) error {
 	return nil
-}
-func (dependencies *checkoutDependencies) Process(_ context.Context, orderID string, amountCents int64) (*paymentdomain.Payment, error) {
-	return paymentdomain.NewPayment("payment-1", orderID, amountCents, dependencies.paymentStatus, fixedCheckoutTime)
 }
 func (dependencies *checkoutDependencies) Execute(applicationContext context.Context, operation func(context.Context) error) error {
 	return operation(applicationContext)
@@ -97,8 +96,7 @@ func TestHandler(t *testing.T) {
 		{name: "product not found", body: validBody, authenticated: true, dependencies: &checkoutDependencies{}, wantStatus: http.StatusNotFound},
 		{name: "insufficient stock", body: validBody, authenticated: true, dependencies: &checkoutDependencies{products: []*catalogdomain.Product{product}, reserveError: inventorydomain.ErrInsufficientStock}, wantStatus: http.StatusConflict},
 		{name: "generic failure", body: validBody, authenticated: true, dependencies: &checkoutDependencies{findError: dependencyError}, wantStatus: http.StatusInternalServerError},
-		{name: "approved checkout", body: validBody, authenticated: true, dependencies: &checkoutDependencies{products: []*catalogdomain.Product{product}, paymentStatus: paymentdomain.PaymentStatusApproved}, wantStatus: http.StatusCreated},
-		{name: "declined checkout", body: validBody, authenticated: true, dependencies: &checkoutDependencies{products: []*catalogdomain.Product{product}, paymentStatus: paymentdomain.PaymentStatusDeclined}, wantStatus: http.StatusCreated},
+		{name: "pending checkout", body: validBody, authenticated: true, dependencies: &checkoutDependencies{products: []*catalogdomain.Product{product}}, wantStatus: http.StatusCreated},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			router, token := checkoutRouter(testCase.dependencies, testCase.authenticated)
@@ -111,7 +109,7 @@ func TestHandler(t *testing.T) {
 				if err := json.Unmarshal(response.Body.Bytes(), &responseBody); err != nil {
 					t.Fatalf("decode response: %v", err)
 				}
-				if responseBody.OrderID == "" || responseBody.OrderStatus == "" || responseBody.PaymentID != "payment-1" || responseBody.PaymentStatus != string(testCase.dependencies.paymentStatus) || responseBody.TotalAmountCents != 20000 || responseBody.CreatedAt != fixedCheckoutTime.Format(time.RFC3339) {
+				if responseBody.OrderID == "" || responseBody.OrderStatus != string(orderdomain.OrderStatusPending) || responseBody.TotalAmountCents != 20000 || responseBody.CreatedAt != fixedCheckoutTime.Format(time.RFC3339) {
 					t.Fatalf("response = %#v", responseBody)
 				}
 				wantItems := []dto.CheckoutItemResponse{{ProductID: "product-1", ProductName: "Keyboard", UnitPriceCents: 10000, Quantity: 2, SubtotalCents: 20000}}

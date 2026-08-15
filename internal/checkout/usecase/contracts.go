@@ -3,11 +3,15 @@ package usecase
 import (
 	"context"
 
+	authenticationdomain "github.com/afraniocaires/ecommerce/internal/authentication/domain"
 	catalogdomain "github.com/afraniocaires/ecommerce/internal/catalog/domain"
 	inventoryusecase "github.com/afraniocaires/ecommerce/internal/inventory/usecase"
 	orderdomain "github.com/afraniocaires/ecommerce/internal/order/domain"
-	paymentdomain "github.com/afraniocaires/ecommerce/internal/payment/domain"
 )
+
+type CustomerReader interface {
+	FindByID(context context.Context, customerID string) (*authenticationdomain.User, error)
+}
 
 type ProductReader interface {
 	FindByIDs(
@@ -30,14 +34,6 @@ type InventoryManager interface {
 type OrderWriter interface {
 	Save(context context.Context, order *orderdomain.Order) error
 	UpdateStatus(context context.Context, order *orderdomain.Order) error
-}
-
-type PaymentProcessor interface {
-	Process(
-		context context.Context,
-		orderID string,
-		amountCents int64,
-	) (*paymentdomain.Payment, error)
 }
 
 type TransactionManager interface {

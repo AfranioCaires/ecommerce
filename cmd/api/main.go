@@ -22,8 +22,6 @@ import (
 	ordertransport "github.com/afraniocaires/ecommerce/internal/order/adapter/http"
 	orderrepository "github.com/afraniocaires/ecommerce/internal/order/adapter/repository/sqlc"
 	orderusecase "github.com/afraniocaires/ecommerce/internal/order/usecase"
-	paymentrepository "github.com/afraniocaires/ecommerce/internal/payment/adapter/repository/sqlc"
-	paymentusecase "github.com/afraniocaires/ecommerce/internal/payment/usecase"
 	"github.com/afraniocaires/ecommerce/internal/platform/configuration"
 	"github.com/afraniocaires/ecommerce/internal/platform/database"
 	databasequeries "github.com/afraniocaires/ecommerce/internal/platform/database/sqlc"
@@ -79,7 +77,6 @@ func main() {
 	productRepository := catalogrepository.NewProductRepository(queries)
 	stockRepository := inventoryrepository.NewStockRepository(queries)
 	orderRepository := orderrepository.NewOrderRepository(queries)
-	paymentRepository := paymentrepository.NewPaymentRepository(queries)
 
 	transactionManager := transaction.NewManager(databaseConnection)
 
@@ -108,18 +105,11 @@ func main() {
 
 	inventoryService := inventoryusecase.NewInventoryService(stockRepository, currentTime)
 
-	paymentGateway := paymentusecase.NewSimulatedPaymentGateway()
-	paymentService := paymentusecase.NewPaymentService(
-		paymentRepository,
-		paymentGateway,
-		currentTime,
-	)
-
 	checkoutUseCase := checkoutusecase.NewCheckoutUseCase(
 		productRepository,
+		userRepository,
 		inventoryService,
 		orderRepository,
-		paymentService,
 		transactionManager,
 		currentTime,
 	)

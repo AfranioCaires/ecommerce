@@ -104,12 +104,28 @@ func RestoreOrder(
 	return order, nil
 }
 
-func (order *Order) MarkAsPaid(updatedAt time.Time) {
-	order.Status = OrderStatusPaid
+func (order *Order) transition(from OrderStatus, to OrderStatus, updatedAt time.Time) error {
+	if order.Status != from {
+		return ErrInvalidOrderTransition
+	}
+	order.Status = to
 	order.UpdatedAt = updatedAt.UTC()
+	return nil
 }
 
-func (order *Order) MarkAsFailed(updatedAt time.Time) {
-	order.Status = OrderStatusFailed
+func (order *Order) StartPayment(updatedAt time.Time) error {
+	return order.transition(OrderStatusPending, OrderStatusPaymentPending, updatedAt)
+}
+
+func (order *Order) MarkAsPaid(updatedAt time.Time) error {
+	return order.transition(OrderStatusPaymentPending, OrderStatusPaid, updatedAt)
+}
+
+func (order *Order) Cancel(updatedAt time.Time) error {
+	if order.Status != OrderStatusPending && order.Status != OrderStatusPaymentPending {
+		return ErrInvalidOrderTransition
+	}
+	order.Status = OrderStatusCanceled
 	order.UpdatedAt = updatedAt.UTC()
+	return nil
 }

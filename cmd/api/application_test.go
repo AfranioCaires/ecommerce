@@ -27,8 +27,6 @@ import (
 	ordertransport "github.com/afraniocaires/ecommerce/internal/order/adapter/http"
 	orderdomain "github.com/afraniocaires/ecommerce/internal/order/domain"
 	orderusecase "github.com/afraniocaires/ecommerce/internal/order/usecase"
-	paymentdomain "github.com/afraniocaires/ecommerce/internal/payment/domain"
-	paymentusecase "github.com/afraniocaires/ecommerce/internal/payment/usecase"
 	"github.com/afraniocaires/ecommerce/internal/platform/security"
 )
 
@@ -94,12 +92,6 @@ func (repository *applicationOrderRepository) FindAll(applicationContext context
 	return orders, nil
 }
 
-type applicationPaymentRepository struct{}
-
-func (repository applicationPaymentRepository) Save(applicationContext context.Context, payment *paymentdomain.Payment) error {
-	return nil
-}
-
 type applicationTransactionManager struct{}
 
 func (manager applicationTransactionManager) Execute(applicationContext context.Context, operation func(transactionContext context.Context) error) error {
@@ -122,8 +114,7 @@ func TestApplicationFlow(t *testing.T) {
 	getProductUseCase := catalogusecase.NewGetProductUseCase(productRepository)
 	listProductsUseCase := catalogusecase.NewListProductsUseCase(productRepository)
 	inventoryService := inventoryusecase.NewInventoryService(stockRepository, currentTime)
-	paymentService := paymentusecase.NewPaymentService(applicationPaymentRepository{}, paymentusecase.NewSimulatedPaymentGateway(), currentTime)
-	checkoutUseCase := checkoutusecase.NewCheckoutUseCase(productRepository, inventoryService, orderRepository, paymentService, applicationTransactionManager{}, currentTime)
+	checkoutUseCase := checkoutusecase.NewCheckoutUseCase(productRepository, userRepository, inventoryService, orderRepository, applicationTransactionManager{}, currentTime)
 	authenticationHandler := authenticationtransport.NewHandler(registerUserUseCase, loginUserUseCase, getUserUseCase, listUsersUseCase)
 	productHandler := catalogtransport.NewHandler(createProductUseCase, getProductUseCase, listProductsUseCase)
 	inventoryHandler := inventorytransport.NewHandler(inventoryService)

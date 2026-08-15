@@ -58,6 +58,9 @@ func (handler *Handler) Checkout(
 		case errors.Is(errorValue, checkoutusecase.ErrCheckoutProductNotFound):
 			statusCode = http.StatusNotFound
 			message = errorValue.Error()
+		case errors.Is(errorValue, checkoutusecase.ErrCheckoutCustomerNotFound):
+			statusCode = http.StatusNotFound
+			message = errorValue.Error()
 		case errors.Is(errorValue, checkoutusecase.ErrEmptyCheckoutItems),
 			errors.Is(errorValue, checkoutusecase.ErrInvalidCheckoutItem),
 			errors.Is(errorValue, checkoutusecase.ErrInactiveCheckoutProduct):
@@ -83,8 +86,6 @@ func (handler *Handler) Checkout(
 	httpresponse.JSON(responseWriter, http.StatusCreated, dto.CheckoutResponse{
 		OrderID:          output.Order.ID,
 		OrderStatus:      string(output.Order.Status),
-		PaymentID:        output.Payment.ID,
-		PaymentStatus:    string(output.Payment.Status),
 		TotalAmountCents: output.Order.TotalAmountCents,
 		Items:            itemResponses,
 		CreatedAt:        output.Order.CreatedAt.Format(time.RFC3339),

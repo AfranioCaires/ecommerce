@@ -8,41 +8,42 @@ import (
 
 	"github.com/google/uuid"
 
+	authenticationdomain "github.com/afraniocaires/ecommerce/internal/authentication/domain"
 	catalogdomain "github.com/afraniocaires/ecommerce/internal/catalog/domain"
 	inventoryusecase "github.com/afraniocaires/ecommerce/internal/inventory/usecase"
 	orderdomain "github.com/afraniocaires/ecommerce/internal/order/domain"
-	paymentdomain "github.com/afraniocaires/ecommerce/internal/payment/domain"
 )
 
 var (
-	ErrEmptyCheckoutItems      = errors.New("the checkout must contain at least one item.")
-	ErrInvalidCheckoutItem     = errors.New("a checkout item is invalid.")
-	ErrCheckoutProductNotFound = errors.New("a requested product was not found.")
-	ErrInactiveCheckoutProduct = errors.New("a requested product is inactive.")
+	ErrEmptyCheckoutItems       = errors.New("the checkout must contain at least one item.")
+	ErrInvalidCheckoutItem      = errors.New("a checkout item is invalid.")
+	ErrCheckoutProductNotFound  = errors.New("a requested product was not found.")
+	ErrInactiveCheckoutProduct  = errors.New("a requested product is inactive.")
+	ErrCheckoutCustomerNotFound = errors.New("the checkout customer was not found.")
 )
 
 type CheckoutUseCase struct {
 	productReader      ProductReader
+	customerReader     CustomerReader
 	inventoryManager   InventoryManager
 	orderWriter        OrderWriter
-	paymentProcessor   PaymentProcessor
 	transactionManager TransactionManager
 	currentTime        func() time.Time
 }
 
 func NewCheckoutUseCase(
 	productReader ProductReader,
+	customerReader CustomerReader,
 	inventoryManager InventoryManager,
 	orderWriter OrderWriter,
-	paymentProcessor PaymentProcessor,
 	transactionManager TransactionManager,
 	currentTime func() time.Time,
 ) *CheckoutUseCase {
 	return &CheckoutUseCase{
 		productReader:      productReader,
+		customerReader:     customerReader,
 		inventoryManager:   inventoryManager,
 		orderWriter:        orderWriter,
-		paymentProcessor:   paymentProcessor,
 		transactionManager: transactionManager,
 		currentTime:        currentTime,
 	}
@@ -66,6 +67,13 @@ func (useCase *CheckoutUseCase) Execute(
 	errorValue = useCase.transactionManager.Execute(
 		applicationContext,
 		func(transactionContext context.Context) error {
+			if _, errorValue := useCase.customerReader.FindByID(transactionContext, input.UserID); errorValue != nil {
+				if errors.Is(errorValue, authenticationdomain.ErrUserNotFound) {
+					return ErrCheckoutCustomerNotFound
+				}
+				return errorValue
+			}
+
 			products, errorValue := useCase.productReader.FindByIDs(
 				transactionContext,
 				productIDs,
@@ -134,38 +142,8 @@ func (useCase *CheckoutUseCase) Execute(
 				return errorValue
 			}
 
-			payment, errorValue := useCase.paymentProcessor.Process(
-				transactionContext,
-				order.ID,
-				order.TotalAmountCents,
-			)
-			if errorValue != nil {
-				return errorValue
-			}
-
-			if payment.Status == paymentdomain.PaymentStatusDeclined {
-				if errorValue := useCase.inventoryManager.Release(
-					transactionContext,
-					stockItems,
-				); errorValue != nil {
-					return errorValue
-				}
-
-				order.MarkAsFailed(useCase.currentTime())
-			} else {
-				order.MarkAsPaid(useCase.currentTime())
-			}
-
-			if errorValue := useCase.orderWriter.UpdateStatus(
-				transactionContext,
-				order,
-			); errorValue != nil {
-				return errorValue
-			}
-
 			checkoutOutput = CheckoutOutput{
-				Order:   order,
-				Payment: payment,
+				Order: order,
 			}
 
 			return nil
