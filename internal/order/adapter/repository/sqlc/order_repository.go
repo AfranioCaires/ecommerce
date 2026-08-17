@@ -98,6 +98,25 @@ func (repository *OrderRepository) FindByID(
 	return restoreOrder(order, items)
 }
 
+func (repository *OrderRepository) FindByIDForUpdate(
+	applicationContext context.Context,
+	orderID string,
+) (*domain.Order, error) {
+	queries := transaction.Queries(applicationContext, repository.queries)
+	order, errorValue := queries.GetOrderByIDForUpdate(applicationContext, orderID)
+	if errors.Is(errorValue, sql.ErrNoRows) {
+		return nil, domain.ErrOrderNotFound
+	}
+	if errorValue != nil {
+		return nil, errorValue
+	}
+	items, errorValue := queries.ListOrderItemsByOrderIDs(applicationContext, []string{order.ID})
+	if errorValue != nil {
+		return nil, errorValue
+	}
+	return restoreOrder(order, items)
+}
+
 func (repository *OrderRepository) FindByUserID(
 	applicationContext context.Context,
 	userID string,

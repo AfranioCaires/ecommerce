@@ -17,6 +17,7 @@ type Querier interface {
 	GetCustomerByEmail(ctx context.Context, email string) (GetCustomerByEmailRow, error)
 	GetCustomerByID(ctx context.Context, id string) (GetCustomerByIDRow, error)
 	GetOrderByID(ctx context.Context, id string) (Order, error)
+	GetOrderByIDForUpdate(ctx context.Context, id string) (Order, error)
 	GetProductByID(ctx context.Context, id string) (Product, error)
 	GetStockByProductID(ctx context.Context, productID string) (Stock, error)
 	GetStockByProductIDForUpdate(ctx context.Context, productID string) (Stock, error)

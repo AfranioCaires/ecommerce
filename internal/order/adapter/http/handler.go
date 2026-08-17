@@ -19,18 +19,96 @@ type Handler struct {
 	getOrderUseCase       *orderusecase.GetOrderUseCase
 	listUserOrdersUseCase *orderusecase.ListUserOrdersUseCase
 	listAllOrdersUseCase  *orderusecase.ListAllOrdersUseCase
+	cancelOrderUseCase    *orderusecase.CancelOrderUseCase
 }
 
 func NewHandler(
 	getOrderUseCase *orderusecase.GetOrderUseCase,
 	listUserOrdersUseCase *orderusecase.ListUserOrdersUseCase,
 	listAllOrdersUseCase *orderusecase.ListAllOrdersUseCase,
+	cancelOrderUseCase *orderusecase.CancelOrderUseCase,
 ) *Handler {
 	return &Handler{
 		getOrderUseCase:       getOrderUseCase,
 		listUserOrdersUseCase: listUserOrdersUseCase,
 		listAllOrdersUseCase:  listAllOrdersUseCase,
+		cancelOrderUseCase:    cancelOrderUseCase,
 	}
+}
+
+func (handler *Handler) GetByIDPublic(responseWriter http.ResponseWriter, request *http.Request) {
+	order, errorValue := handler.getOrderUseCase.Execute(request.Context(), request.PathValue("orderID"))
+	if errorValue != nil {
+		writeOrderError(responseWriter, errorValue)
+		return
+	}
+	httpresponse.JSON(responseWriter, http.StatusOK, toOrderResponse(order))
+}
+
+func (handler *Handler) ListPublic(responseWriter http.ResponseWriter, request *http.Request) {
+	limit, errorValue := orderQueryValue(request, "limit", orderusecase.DefaultOrderLimit)
+	if errorValue != nil {
+		httpresponse.JSON(responseWriter, http.StatusBadRequest, httpresponse.ErrorResponse{Error: orderusecase.ErrInvalidOrderPagination.Error()})
+		return
+	}
+	offset, errorValue := orderQueryValue(request, "offset", orderusecase.DefaultOrderOffset)
+	if errorValue != nil {
+		httpresponse.JSON(responseWriter, http.StatusBadRequest, httpresponse.ErrorResponse{Error: orderusecase.ErrInvalidOrderPagination.Error()})
+		return
+	}
+	pageRequest, errorValue := orderusecase.NewOrderPageRequest(limit, offset)
+	if errorValue != nil {
+		httpresponse.JSON(responseWriter, http.StatusBadRequest, httpresponse.ErrorResponse{Error: errorValue.Error()})
+		return
+	}
+	orders, errorValue := handler.listAllOrdersUseCase.Execute(request.Context(), pageRequest)
+	if errorValue != nil {
+		writeOrderError(responseWriter, errorValue)
+		return
+	}
+	responses := make([]dto.OrderResponse, 0, len(orders))
+	for _, order := range orders {
+		responses = append(responses, toOrderResponse(order))
+	}
+	httpresponse.JSON(responseWriter, http.StatusOK, responses)
+}
+
+func (handler *Handler) Cancel(responseWriter http.ResponseWriter, request *http.Request) {
+	userID, available := middleware.UserID(request.Context())
+	if !available {
+		httpresponse.JSON(responseWriter, http.StatusUnauthorized, httpresponse.ErrorResponse{Error: middleware.ErrMissingIdentity.Error()})
+		return
+	}
+	handler.cancel(responseWriter, request, userID)
+}
+
+func (handler *Handler) CancelPublic(responseWriter http.ResponseWriter, request *http.Request) {
+	handler.cancel(responseWriter, request, "")
+}
+
+func (handler *Handler) cancel(responseWriter http.ResponseWriter, request *http.Request, userID string) {
+	order, errorValue := handler.cancelOrderUseCase.Execute(request.Context(), orderusecase.CancelOrderInput{
+		OrderID: request.PathValue("orderID"), UserID: userID,
+	})
+	if errorValue != nil {
+		writeOrderError(responseWriter, errorValue)
+		return
+	}
+	httpresponse.JSON(responseWriter, http.StatusOK, toOrderResponse(order))
+}
+
+func writeOrderError(responseWriter http.ResponseWriter, errorValue error) {
+	statusCode := http.StatusInternalServerError
+	message := "an unexpected error occurred."
+	switch {
+	case errors.Is(errorValue, orderdomain.ErrOrderNotFound):
+		statusCode, message = http.StatusNotFound, errorValue.Error()
+	case errors.Is(errorValue, orderusecase.ErrOrderForbidden):
+		statusCode, message = http.StatusForbidden, errorValue.Error()
+	case errors.Is(errorValue, orderdomain.ErrInvalidOrderTransition):
+		statusCode, message = http.StatusConflict, errorValue.Error()
+	}
+	httpresponse.JSON(responseWriter, statusCode, httpresponse.ErrorResponse{Error: message})
 }
 
 func (handler *Handler) GetByID(

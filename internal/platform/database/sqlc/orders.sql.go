@@ -86,6 +86,20 @@ func (q *Queries) GetOrderByID(ctx context.Context, id string) (Order, error) {
 	return i, err
 }
 
+const getOrderByIDForUpdate = `-- name: GetOrderByIDForUpdate :one
+SELECT id, customer_id, total_amount_cents, status, created_at, updated_at
+FROM orders
+WHERE id = $1
+FOR UPDATE
+`
+
+func (q *Queries) GetOrderByIDForUpdate(ctx context.Context, id string) (Order, error) {
+	row := q.db.QueryRowContext(ctx, getOrderByIDForUpdate, id)
+	var i Order
+	err := row.Scan(&i.ID, &i.CustomerID, &i.TotalAmountCents, &i.Status, &i.CreatedAt, &i.UpdatedAt)
+	return i, err
+}
+
 const listOrderItemsByOrderIDs = `-- name: ListOrderItemsByOrderIDs :many
 SELECT id, order_id, product_id, product_name, unit_price_cents, quantity
 FROM order_items

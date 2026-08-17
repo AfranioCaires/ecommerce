@@ -117,12 +117,13 @@ func main() {
 	getOrderUseCase := orderusecase.NewGetOrderUseCase(orderRepository)
 	listUserOrdersUseCase := orderusecase.NewListUserOrdersUseCase(orderRepository)
 	listAllOrdersUseCase := orderusecase.NewListAllOrdersUseCase(orderRepository)
+	cancelOrderUseCase := orderusecase.NewCancelOrderUseCase(orderRepository, inventoryService, transactionManager, currentTime)
 
 	authenticationHandler := authenticationtransport.NewHandler(registerUserUseCase, loginUserUseCase, getUserUseCase, listUsersUseCase)
 	productHandler := catalogtransport.NewHandler(createProductUseCase, getProductUseCase, listProductsUseCase)
 	inventoryHandler := inventorytransport.NewHandler(inventoryService)
 	checkoutHandler := checkouttransport.NewHandler(checkoutUseCase)
-	orderHandler := ordertransport.NewHandler(getOrderUseCase, listUserOrdersUseCase, listAllOrdersUseCase)
+	orderHandler := ordertransport.NewHandler(getOrderUseCase, listUserOrdersUseCase, listAllOrdersUseCase, cancelOrderUseCase)
 
 	router := newRouter(
 		authenticationHandler,

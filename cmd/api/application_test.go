@@ -75,6 +75,9 @@ func (repository *applicationOrderRepository) FindByID(applicationContext contex
 	}
 	return order, nil
 }
+func (repository *applicationOrderRepository) FindByIDForUpdate(applicationContext context.Context, orderID string) (*orderdomain.Order, error) {
+	return repository.FindByID(applicationContext, orderID)
+}
 func (repository *applicationOrderRepository) FindByUserID(applicationContext context.Context, userID string, pageRequest orderusecase.OrderPageRequest) ([]*orderdomain.Order, error) {
 	orders := make([]*orderdomain.Order, 0)
 	for _, order := range repository.orders {
@@ -119,7 +122,8 @@ func TestApplicationFlow(t *testing.T) {
 	productHandler := catalogtransport.NewHandler(createProductUseCase, getProductUseCase, listProductsUseCase)
 	inventoryHandler := inventorytransport.NewHandler(inventoryService)
 	checkoutHandler := checkouttransport.NewHandler(checkoutUseCase)
-	orderHandler := ordertransport.NewHandler(orderusecase.NewGetOrderUseCase(orderRepository), orderusecase.NewListUserOrdersUseCase(orderRepository), orderusecase.NewListAllOrdersUseCase(orderRepository))
+	cancelOrderUseCase := orderusecase.NewCancelOrderUseCase(orderRepository, inventoryService, applicationTransactionManager{}, currentTime)
+	orderHandler := ordertransport.NewHandler(orderusecase.NewGetOrderUseCase(orderRepository), orderusecase.NewListUserOrdersUseCase(orderRepository), orderusecase.NewListAllOrdersUseCase(orderRepository), cancelOrderUseCase)
 	router := newRouter(authenticationHandler, productHandler, inventoryHandler, checkoutHandler, orderHandler, accessTokenManager)
 
 	administratorToken, _ := accessTokenManager.Generate("administrator-1", []authenticationdomain.Role{authenticationdomain.RoleAdministrator}, time.Now())

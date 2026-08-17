@@ -28,4 +28,8 @@ func RegisterOrderRoutes(
 		"GET /api/orders/{orderID}",
 		authenticationMiddleware(http.HandlerFunc(orderHandler.GetByID)),
 	)
+	router.Handle(
+		"POST /api/orders/{orderID}/cancel",
+		authenticationMiddleware(http.HandlerFunc(orderHandler.Cancel)),
+	)
 }

@@ -39,6 +39,9 @@ func (repository *orderRepository) FindByID(_ context.Context, orderID string) (
 	}
 	return nil, orderdomain.ErrOrderNotFound
 }
+func (repository *orderRepository) FindByIDForUpdate(context context.Context, orderID string) (*orderdomain.Order, error) {
+	return repository.FindByID(context, orderID)
+}
 func (repository *orderRepository) FindByUserID(_ context.Context, userID string, pageRequest orderusecase.OrderPageRequest) ([]*orderdomain.Order, error) {
 	repository.method, repository.pageRequest = "FindByUserID", pageRequest
 	if repository.findError != nil {
@@ -65,6 +68,7 @@ func orderRouter(repository *orderRepository, userID string, roles []authenticat
 		orderusecase.NewGetOrderUseCase(repository),
 		orderusecase.NewListUserOrdersUseCase(repository),
 		orderusecase.NewListAllOrdersUseCase(repository),
+		nil,
 	)
 	router := http.NewServeMux()
 	var listHandler http.Handler = http.HandlerFunc(handler.List)

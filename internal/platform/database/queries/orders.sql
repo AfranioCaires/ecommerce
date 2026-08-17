@@ -20,6 +20,12 @@ SELECT id, customer_id, total_amount_cents, status, created_at, updated_at
 FROM orders
 WHERE id = $1;
 
+-- name: GetOrderByIDForUpdate :one
+SELECT id, customer_id, total_amount_cents, status, created_at, updated_at
+FROM orders
+WHERE id = $1
+FOR UPDATE;
+
 -- name: ListOrdersByCustomer :many
 SELECT id, customer_id, total_amount_cents, status, created_at, updated_at
 FROM orders

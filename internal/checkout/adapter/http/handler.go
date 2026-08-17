@@ -43,7 +43,23 @@ func (handler *Handler) Checkout(
 			Quantity:  requestItem.Quantity,
 		})
 	}
+	handler.createOrder(responseWriter, request, userID, checkoutItems)
+}
 
+func (handler *Handler) CreateForCustomer(responseWriter http.ResponseWriter, request *http.Request) {
+	var checkoutRequest dto.ChallengeCheckoutRequest
+	if errorValue := httpresponse.DecodeJSON(responseWriter, request, &checkoutRequest); errorValue != nil {
+		httpresponse.JSON(responseWriter, http.StatusBadRequest, httpresponse.ErrorResponse{Error: "the JSON request body is invalid."})
+		return
+	}
+	checkoutItems := make([]checkoutusecase.CheckoutItemInput, 0, len(checkoutRequest.Items))
+	for _, requestItem := range checkoutRequest.Items {
+		checkoutItems = append(checkoutItems, checkoutusecase.CheckoutItemInput{ProductID: requestItem.ProductID, Quantity: requestItem.Quantity})
+	}
+	handler.createOrder(responseWriter, request, checkoutRequest.CustomerID, checkoutItems)
+}
+
+func (handler *Handler) createOrder(responseWriter http.ResponseWriter, request *http.Request, userID string, checkoutItems []checkoutusecase.CheckoutItemInput) {
 	output, errorValue := handler.checkoutUseCase.Execute(
 		request.Context(),
 		checkoutusecase.CheckoutInput{UserID: userID, Items: checkoutItems},

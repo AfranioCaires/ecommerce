@@ -24,6 +24,9 @@ func (repository *queryRepository) FindByID(_ context.Context, orderID string) (
 	repository.method, repository.orderID = "FindByID", orderID
 	return repository.order, repository.err
 }
+func (repository *queryRepository) FindByIDForUpdate(context context.Context, orderID string) (*domain.Order, error) {
+	return repository.FindByID(context, orderID)
+}
 func (repository *queryRepository) FindByUserID(_ context.Context, userID string, pageRequest OrderPageRequest) ([]*domain.Order, error) {
 	repository.method, repository.userID, repository.pageRequest = "FindByUserID", userID, pageRequest
 	return repository.orders, repository.err

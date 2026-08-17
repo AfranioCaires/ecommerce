@@ -23,6 +23,8 @@ func RegisterChallengeRoutes(
 	router.HandleFunc("GET /produtos", productHandler.List)
 	router.HandleFunc("GET /produtos/{productID}", productHandler.GetByID)
 
-	_ = checkoutHandler
-	_ = orderHandler
+	router.HandleFunc("POST /pedidos", checkoutHandler.CreateForCustomer)
+	router.HandleFunc("GET /pedidos", orderHandler.ListPublic)
+	router.HandleFunc("GET /pedidos/{orderID}", orderHandler.GetByIDPublic)
+	router.HandleFunc("POST /pedidos/{orderID}/cancelar", orderHandler.CancelPublic)
 }
