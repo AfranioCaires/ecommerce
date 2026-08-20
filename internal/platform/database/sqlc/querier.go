@@ -11,13 +11,17 @@ import (
 type Querier interface {
 	CountActiveProducts(ctx context.Context) (int64, error)
 	CreateCustomer(ctx context.Context, arg CreateCustomerParams) error
+	CreateInboxMessage(ctx context.Context, arg CreateInboxMessageParams) error
 	CreateOrder(ctx context.Context, arg CreateOrderParams) error
 	CreateOrderItem(ctx context.Context, arg CreateOrderItemParams) error
+	CreateOrderSaga(ctx context.Context, arg CreateOrderSagaParams) error
+	CreateOutboxMessage(ctx context.Context, arg CreateOutboxMessageParams) error
 	CreatePayment(ctx context.Context, arg CreatePaymentParams) error
 	GetCustomerByEmail(ctx context.Context, email string) (GetCustomerByEmailRow, error)
 	GetCustomerByID(ctx context.Context, id string) (GetCustomerByIDRow, error)
 	GetOrderByID(ctx context.Context, id string) (Order, error)
 	GetOrderByIDForUpdate(ctx context.Context, id string) (Order, error)
+	GetOrderSagaForUpdate(ctx context.Context, id string) (OrderSaga, error)
 	GetProductByID(ctx context.Context, id string) (Product, error)
 	GetStockByProductID(ctx context.Context, productID string) (Stock, error)
 	GetStockByProductIDForUpdate(ctx context.Context, productID string) (Stock, error)
@@ -26,7 +30,11 @@ type Querier interface {
 	ListOrderItemsByOrderIDs(ctx context.Context, orderIds []string) ([]OrderItem, error)
 	ListOrders(ctx context.Context, arg ListOrdersParams) ([]Order, error)
 	ListOrdersByCustomer(ctx context.Context, arg ListOrdersByCustomerParams) ([]Order, error)
+	ListPendingOutboxMessages(ctx context.Context, arg ListPendingOutboxMessagesParams) ([]OutboxMessage, error)
 	ListProductsByIDs(ctx context.Context, productIds []string) ([]Product, error)
+	MarkOutboxMessageFailed(ctx context.Context, arg MarkOutboxMessageFailedParams) error
+	MarkOutboxMessagePublished(ctx context.Context, arg MarkOutboxMessagePublishedParams) error
+	UpdateOrderSaga(ctx context.Context, arg UpdateOrderSagaParams) error
 	UpdateOrderStatus(ctx context.Context, arg UpdateOrderStatusParams) error
 	UpsertProduct(ctx context.Context, arg UpsertProductParams) error
 	UpsertStock(ctx context.Context, arg UpsertStockParams) error

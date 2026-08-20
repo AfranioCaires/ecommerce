@@ -5,6 +5,8 @@
 package sqlc
 
 import (
+	"database/sql"
+	"encoding/json"
 	"time"
 )
 
@@ -15,6 +17,11 @@ type Customer struct {
 	Roles        string    `json:"roles"`
 	CreatedAt    time.Time `json:"created_at"`
 	Name         string    `json:"name"`
+}
+
+type InboxMessage struct {
+	MessageID   string    `json:"message_id"`
+	ProcessedAt time.Time `json:"processed_at"`
 }
 
 type Order struct {
@@ -33,6 +40,27 @@ type OrderItem struct {
 	ProductName    string `json:"product_name"`
 	UnitPriceCents int64  `json:"unit_price_cents"`
 	Quantity       int32  `json:"quantity"`
+}
+
+type OrderSaga struct {
+	ID            string    `json:"id"`
+	OrderID       string    `json:"order_id"`
+	CorrelationID string    `json:"correlation_id"`
+	Status        string    `json:"status"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+}
+
+type OutboxMessage struct {
+	ID            string          `json:"id"`
+	MessageType   string          `json:"message_type"`
+	RoutingKey    string          `json:"routing_key"`
+	Payload       json.RawMessage `json:"payload"`
+	Attempts      int32           `json:"attempts"`
+	NextAttemptAt time.Time       `json:"next_attempt_at"`
+	PublishedAt   sql.NullTime    `json:"published_at"`
+	LastError     string          `json:"last_error"`
+	CreatedAt     time.Time       `json:"created_at"`
 }
 
 type Payment struct {

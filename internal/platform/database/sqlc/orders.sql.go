@@ -96,7 +96,14 @@ FOR UPDATE
 func (q *Queries) GetOrderByIDForUpdate(ctx context.Context, id string) (Order, error) {
 	row := q.db.QueryRowContext(ctx, getOrderByIDForUpdate, id)
 	var i Order
-	err := row.Scan(&i.ID, &i.CustomerID, &i.TotalAmountCents, &i.Status, &i.CreatedAt, &i.UpdatedAt)
+	err := row.Scan(
+		&i.ID,
+		&i.CustomerID,
+		&i.TotalAmountCents,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
 	return i, err
 }
 
