@@ -27,4 +27,5 @@ func RegisterChallengeRoutes(
 	router.HandleFunc("GET /pedidos", orderHandler.ListPublic)
 	router.HandleFunc("GET /pedidos/{orderID}", orderHandler.GetByIDPublic)
 	router.HandleFunc("POST /pedidos/{orderID}/cancelar", orderHandler.CancelPublic)
+	router.HandleFunc("POST /pedidos/{orderID}/pagar", orderHandler.PayPublic)
 }

@@ -32,4 +32,5 @@ func RegisterOrderRoutes(
 		"POST /api/orders/{orderID}/cancel",
 		authenticationMiddleware(http.HandlerFunc(orderHandler.Cancel)),
 	)
+	router.Handle("POST /api/orders/{orderID}/pay", authenticationMiddleware(http.HandlerFunc(orderHandler.Pay)))
 }

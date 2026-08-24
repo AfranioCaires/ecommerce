@@ -17,3 +17,9 @@ type OrderResponse struct {
 	CreatedAt        string              `json:"created_at"`
 	UpdatedAt        string              `json:"updated_at"`
 }
+
+type PayOrderResponse struct {
+	SagaID        string `json:"sagaId"`
+	CorrelationID string `json:"correlationId"`
+	OrderStatus   string `json:"orderStatus"`
+}

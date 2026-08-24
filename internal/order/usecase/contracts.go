@@ -2,9 +2,11 @@ package usecase
 
 import (
 	"context"
+	"time"
 
 	inventoryusecase "github.com/afraniocaires/ecommerce/internal/inventory/usecase"
 	"github.com/afraniocaires/ecommerce/internal/order/domain"
+	"github.com/afraniocaires/ecommerce/internal/platform/outbox"
 )
 
 type OrderRepository interface {
@@ -21,6 +23,19 @@ type OrderRepository interface {
 		context context.Context,
 		pageRequest OrderPageRequest,
 	) ([]*domain.Order, error)
+}
+
+type SagaRepository interface {
+	Save(context.Context, *domain.Saga) error
+	FindByIDForUpdate(context.Context, string) (*domain.Saga, error)
+	Update(context.Context, *domain.Saga) error
+}
+
+type OutboxWriter interface {
+	Save(context.Context, *outbox.Message) error
+}
+type InboxWriter interface {
+	TrySave(context.Context, string, time.Time) (bool, error)
 }
 
 type InventoryManager interface {

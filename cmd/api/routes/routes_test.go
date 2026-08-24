@@ -32,12 +32,12 @@ func TestRegisterRoutes(t *testing.T) {
 	productHandler := catalogtransport.NewHandler(nil, nil, nil)
 	RegisterAuthenticationRoutes(router, authenticationHandler)
 	RegisterCatalogRoutes(router, productHandler, accessTokenParserStub{})
-	RegisterChallengeRoutes(router, authenticationHandler, productHandler, checkouttransport.NewHandler(nil), ordertransport.NewHandler(nil, nil, nil, nil))
+	RegisterChallengeRoutes(router, authenticationHandler, productHandler, checkouttransport.NewHandler(nil), ordertransport.NewHandler(nil, nil, nil, nil, nil))
 	RegisterInventoryRoutes(router, inventorytransport.NewHandler(nil), accessTokenParserStub{})
 	RegisterOrderRoutes(
 		router,
 		checkouttransport.NewHandler(nil),
-		ordertransport.NewHandler(nil, nil, nil, nil),
+		ordertransport.NewHandler(nil, nil, nil, nil, nil),
 		accessTokenParserStub{},
 	)
 

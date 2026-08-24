@@ -20,6 +20,7 @@ type Handler struct {
 	listUserOrdersUseCase *orderusecase.ListUserOrdersUseCase
 	listAllOrdersUseCase  *orderusecase.ListAllOrdersUseCase
 	cancelOrderUseCase    *orderusecase.CancelOrderUseCase
+	payOrderUseCase       *orderusecase.PayOrderUseCase
 }
 
 func NewHandler(
@@ -27,13 +28,37 @@ func NewHandler(
 	listUserOrdersUseCase *orderusecase.ListUserOrdersUseCase,
 	listAllOrdersUseCase *orderusecase.ListAllOrdersUseCase,
 	cancelOrderUseCase *orderusecase.CancelOrderUseCase,
+	payOrderUseCase *orderusecase.PayOrderUseCase,
 ) *Handler {
 	return &Handler{
 		getOrderUseCase:       getOrderUseCase,
 		listUserOrdersUseCase: listUserOrdersUseCase,
 		listAllOrdersUseCase:  listAllOrdersUseCase,
 		cancelOrderUseCase:    cancelOrderUseCase,
+		payOrderUseCase:       payOrderUseCase,
 	}
+}
+
+func (handler *Handler) Pay(responseWriter http.ResponseWriter, request *http.Request) {
+	userID, available := middleware.UserID(request.Context())
+	if !available {
+		httpresponse.JSON(responseWriter, http.StatusUnauthorized, httpresponse.ErrorResponse{Error: middleware.ErrMissingIdentity.Error()})
+		return
+	}
+	handler.pay(responseWriter, request, userID)
+}
+
+func (handler *Handler) PayPublic(responseWriter http.ResponseWriter, request *http.Request) {
+	handler.pay(responseWriter, request, "")
+}
+
+func (handler *Handler) pay(responseWriter http.ResponseWriter, request *http.Request, userID string) {
+	output, errorValue := handler.payOrderUseCase.Execute(request.Context(), orderusecase.PayOrderInput{OrderID: request.PathValue("orderID"), UserID: userID})
+	if errorValue != nil {
+		writeOrderError(responseWriter, errorValue)
+		return
+	}
+	httpresponse.JSON(responseWriter, http.StatusAccepted, dto.PayOrderResponse{SagaID: output.SagaID, CorrelationID: output.CorrelationID, OrderStatus: string(output.Order.Status)})
 }
 
 func (handler *Handler) GetByIDPublic(responseWriter http.ResponseWriter, request *http.Request) {

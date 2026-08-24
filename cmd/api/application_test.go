@@ -123,7 +123,7 @@ func TestApplicationFlow(t *testing.T) {
 	inventoryHandler := inventorytransport.NewHandler(inventoryService)
 	checkoutHandler := checkouttransport.NewHandler(checkoutUseCase)
 	cancelOrderUseCase := orderusecase.NewCancelOrderUseCase(orderRepository, inventoryService, applicationTransactionManager{}, currentTime)
-	orderHandler := ordertransport.NewHandler(orderusecase.NewGetOrderUseCase(orderRepository), orderusecase.NewListUserOrdersUseCase(orderRepository), orderusecase.NewListAllOrdersUseCase(orderRepository), cancelOrderUseCase)
+	orderHandler := ordertransport.NewHandler(orderusecase.NewGetOrderUseCase(orderRepository), orderusecase.NewListUserOrdersUseCase(orderRepository), orderusecase.NewListAllOrdersUseCase(orderRepository), cancelOrderUseCase, nil)
 	router := newRouter(authenticationHandler, productHandler, inventoryHandler, checkoutHandler, orderHandler, accessTokenManager)
 
 	administratorToken, _ := accessTokenManager.Generate("administrator-1", []authenticationdomain.Role{authenticationdomain.RoleAdministrator}, time.Now())

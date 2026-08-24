@@ -69,6 +69,7 @@ func orderRouter(repository *orderRepository, userID string, roles []authenticat
 		orderusecase.NewListUserOrdersUseCase(repository),
 		orderusecase.NewListAllOrdersUseCase(repository),
 		nil,
+		nil,
 	)
 	router := http.NewServeMux()
 	var listHandler http.Handler = http.HandlerFunc(handler.List)

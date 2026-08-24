@@ -1,9 +1,13 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -20,11 +24,15 @@ import (
 	inventoryrepository "github.com/afraniocaires/ecommerce/internal/inventory/adapter/repository/sqlc"
 	inventoryusecase "github.com/afraniocaires/ecommerce/internal/inventory/usecase"
 	ordertransport "github.com/afraniocaires/ecommerce/internal/order/adapter/http"
+	ordermessaging "github.com/afraniocaires/ecommerce/internal/order/adapter/messaging"
 	orderrepository "github.com/afraniocaires/ecommerce/internal/order/adapter/repository/sqlc"
 	orderusecase "github.com/afraniocaires/ecommerce/internal/order/usecase"
 	"github.com/afraniocaires/ecommerce/internal/platform/configuration"
 	"github.com/afraniocaires/ecommerce/internal/platform/database"
 	databasequeries "github.com/afraniocaires/ecommerce/internal/platform/database/sqlc"
+	"github.com/afraniocaires/ecommerce/internal/platform/inbox"
+	platformmessaging "github.com/afraniocaires/ecommerce/internal/platform/messaging"
+	"github.com/afraniocaires/ecommerce/internal/platform/outbox"
 	"github.com/afraniocaires/ecommerce/internal/platform/security"
 	"github.com/afraniocaires/ecommerce/internal/platform/transaction"
 )
@@ -77,6 +85,9 @@ func main() {
 	productRepository := catalogrepository.NewProductRepository(queries)
 	stockRepository := inventoryrepository.NewStockRepository(queries)
 	orderRepository := orderrepository.NewOrderRepository(queries)
+	sagaRepository := orderrepository.NewSagaRepository(queries)
+	outboxRepository := outbox.NewSQLCRepository(queries)
+	inboxRepository := inbox.NewSQLCRepository(queries)
 
 	transactionManager := transaction.NewManager(databaseConnection)
 
@@ -118,12 +129,39 @@ func main() {
 	listUserOrdersUseCase := orderusecase.NewListUserOrdersUseCase(orderRepository)
 	listAllOrdersUseCase := orderusecase.NewListAllOrdersUseCase(orderRepository)
 	cancelOrderUseCase := orderusecase.NewCancelOrderUseCase(orderRepository, inventoryService, transactionManager, currentTime)
+	payOrderUseCase := orderusecase.NewPayOrderUseCase(orderRepository, sagaRepository, outboxRepository, transactionManager, currentTime)
+	handlePaymentResultUseCase := orderusecase.NewHandlePaymentResultUseCase(orderRepository, sagaRepository, inboxRepository, inventoryService, transactionManager, currentTime)
 
 	authenticationHandler := authenticationtransport.NewHandler(registerUserUseCase, loginUserUseCase, getUserUseCase, listUsersUseCase)
 	productHandler := catalogtransport.NewHandler(createProductUseCase, getProductUseCase, listProductsUseCase)
 	inventoryHandler := inventorytransport.NewHandler(inventoryService)
 	checkoutHandler := checkouttransport.NewHandler(checkoutUseCase)
-	orderHandler := ordertransport.NewHandler(getOrderUseCase, listUserOrdersUseCase, listAllOrdersUseCase, cancelOrderUseCase)
+	orderHandler := ordertransport.NewHandler(getOrderUseCase, listUserOrdersUseCase, listAllOrdersUseCase, cancelOrderUseCase, payOrderUseCase)
+	paymentResultHandler := ordermessaging.NewPaymentResultHandler(handlePaymentResultUseCase)
+
+	broker, errorValue := platformmessaging.Dial(platformmessaging.Config{
+		URL: applicationConfiguration.RabbitMQURL, CommandExchange: applicationConfiguration.RabbitMQCommandExchange,
+		EventExchange: applicationConfiguration.RabbitMQEventExchange, PaymentQueue: applicationConfiguration.RabbitMQPaymentQueue,
+		ResultQueue: applicationConfiguration.RabbitMQResultQueue, RetryLimit: applicationConfiguration.MessageRetryLimit,
+	})
+	if errorValue != nil {
+		slog.Error("RabbitMQ could not be initialized.", "error", errorValue)
+		os.Exit(1)
+	}
+	defer broker.Close()
+	messagePublisher, errorValue := broker.NewPublisher()
+	if errorValue != nil {
+		slog.Error("RabbitMQ publisher could not be initialized.", "error", errorValue)
+		os.Exit(1)
+	}
+	defer messagePublisher.Close()
+	resultConsumer, errorValue := broker.NewConsumer(applicationConfiguration.RabbitMQResultQueue)
+	if errorValue != nil {
+		slog.Error("RabbitMQ consumer could not be initialized.", "error", errorValue)
+		os.Exit(1)
+	}
+	defer resultConsumer.Close()
+	outboxPublisher := outbox.NewPublisher(outboxRepository, messagePublisher, applicationConfiguration.OutboxInterval, applicationConfiguration.OutboxBatchSize, currentTime, slog.Default())
 
 	router := newRouter(
 		authenticationHandler,
@@ -145,7 +183,22 @@ func main() {
 		IdleTimeout:       60 * time.Second,
 	}
 
-	if errorValue := server.ListenAndServe(); errorValue != nil {
+	applicationContext, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	go func() {
+		if errorValue := runWorkers(applicationContext, outboxPublisher, resultConsumer, paymentResultHandler); errorValue != nil {
+			slog.Error("A background worker stopped.", "error", errorValue)
+			stop()
+		}
+	}()
+	go func() {
+		<-applicationContext.Done()
+		shutdownContext, cancel := context.WithTimeout(context.Background(), applicationConfiguration.ShutdownTimeout)
+		defer cancel()
+		_ = server.Shutdown(shutdownContext)
+	}()
+
+	if errorValue := server.ListenAndServe(); errorValue != nil && !errors.Is(errorValue, http.ErrServerClosed) {
 		slog.Error("The HTTP server stopped unexpectedly.", "error", errorValue)
 		os.Exit(1)
 	}
