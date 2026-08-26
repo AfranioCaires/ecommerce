@@ -63,14 +63,6 @@ type OutboxMessage struct {
 	CreatedAt     time.Time       `json:"created_at"`
 }
 
-type Payment struct {
-	ID          string    `json:"id"`
-	OrderID     string    `json:"order_id"`
-	AmountCents int64     `json:"amount_cents"`
-	Status      string    `json:"status"`
-	CreatedAt   time.Time `json:"created_at"`
-}
-
 type Product struct {
 	ID          string    `json:"id"`
 	Name        string    `json:"name"`

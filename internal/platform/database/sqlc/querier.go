@@ -16,7 +16,6 @@ type Querier interface {
 	CreateOrderItem(ctx context.Context, arg CreateOrderItemParams) error
 	CreateOrderSaga(ctx context.Context, arg CreateOrderSagaParams) error
 	CreateOutboxMessage(ctx context.Context, arg CreateOutboxMessageParams) error
-	CreatePayment(ctx context.Context, arg CreatePaymentParams) error
 	GetCustomerByEmail(ctx context.Context, email string) (GetCustomerByEmailRow, error)
 	GetCustomerByID(ctx context.Context, id string) (GetCustomerByIDRow, error)
 	GetOrderByID(ctx context.Context, id string) (Order, error)

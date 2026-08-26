@@ -11,9 +11,7 @@ import (
 )
 
 const createPayment = `-- name: CreatePayment :exec
-INSERT INTO payments (
-    id, order_id, amount_cents, status, created_at
-)
+INSERT INTO payments (id, order_id, amount_cents, status, created_at)
 VALUES ($1, $2, $3, $4, $5)
 `
 
@@ -34,4 +32,22 @@ func (q *Queries) CreatePayment(ctx context.Context, arg CreatePaymentParams) er
 		arg.CreatedAt,
 	)
 	return err
+}
+
+const getPaymentByOrderID = `-- name: GetPaymentByOrderID :one
+SELECT id, order_id, amount_cents, status, created_at
+FROM payments WHERE order_id = $1
+`
+
+func (q *Queries) GetPaymentByOrderID(ctx context.Context, orderID string) (Payment, error) {
+	row := q.db.QueryRowContext(ctx, getPaymentByOrderID, orderID)
+	var i Payment
+	err := row.Scan(
+		&i.ID,
+		&i.OrderID,
+		&i.AmountCents,
+		&i.Status,
+		&i.CreatedAt,
+	)
+	return i, err
 }

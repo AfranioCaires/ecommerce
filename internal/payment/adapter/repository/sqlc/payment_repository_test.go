@@ -8,7 +8,7 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 
 	"github.com/afraniocaires/ecommerce/internal/payment/domain"
-	databasequeries "github.com/afraniocaires/ecommerce/internal/platform/database/sqlc"
+	databasequeries "github.com/afraniocaires/ecommerce/internal/payment/platform/database/sqlc"
 )
 
 func TestPaymentRepositoryInsertsPayment(t *testing.T) {

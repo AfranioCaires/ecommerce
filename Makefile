@@ -40,6 +40,7 @@ migrate-down:
 
 sqlc:
 	go run github.com/sqlc-dev/sqlc/cmd/sqlc@v$(SQLC_VERSION) generate
+	go run github.com/sqlc-dev/sqlc/cmd/sqlc@v$(SQLC_VERSION) -f sqlc-payment.yaml generate
 
 sqlc-check: sqlc
 	git diff --exit-code -- internal/platform/database/sqlc

@@ -11,6 +11,7 @@ var (
 	ErrInvalidPaymentAmount = errors.New("the payment amount must be greater than zero.")
 	ErrEmptyPaymentID       = errors.New("the payment ID must not be empty.")
 	ErrEmptyPaymentOrderID  = errors.New("the payment order ID must not be empty.")
+	ErrPaymentNotFound      = errors.New("the payment was not found.")
 )
 
 type PaymentStatus string

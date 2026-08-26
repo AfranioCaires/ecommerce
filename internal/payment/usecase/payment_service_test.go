@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/afraniocaires/ecommerce/internal/payment/domain"
+	"github.com/afraniocaires/ecommerce/internal/platform/events"
+	"github.com/afraniocaires/ecommerce/internal/platform/outbox"
 )
 
 var errPaymentDependency = errors.New("payment dependency failed")
@@ -16,12 +18,41 @@ type paymentRepositoryFake struct {
 	saved     *domain.Payment
 }
 
+type paymentMessageDependencies struct{ message *outbox.Message }
+
+func (dependencies *paymentMessageDependencies) TrySave(context.Context, string, time.Time) (bool, error) {
+	return true, nil
+}
+func (dependencies *paymentMessageDependencies) Save(_ context.Context, message *outbox.Message) error {
+	dependencies.message = message
+	return nil
+}
+func (dependencies *paymentMessageDependencies) Execute(applicationContext context.Context, operation func(context.Context) error) error {
+	return operation(applicationContext)
+}
+
 func (repository *paymentRepositoryFake) Save(_ context.Context, payment *domain.Payment) error {
 	if repository.saveError != nil {
 		return repository.saveError
 	}
 	repository.saved = payment
 	return nil
+}
+
+func TestPaymentServiceProcessesRequestedMessage(t *testing.T) {
+	now := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
+	repository := &paymentRepositoryFake{}
+	dependencies := &paymentMessageDependencies{}
+	service := NewMessagePaymentService(repository, &paymentGatewayFake{status: domain.PaymentStatusApproved}, dependencies, dependencies, dependencies, func() time.Time { return now })
+	request := events.PaymentRequested{OrderID: "order-1", AmountCents: 1000}
+	envelope, _ := events.NewEnvelope("message-1", events.PaymentRequestedV1, "saga-1", "correlation-1", now, request)
+	if errorValue := service.ProcessRequested(context.Background(), envelope, request); errorValue != nil || repository.saved == nil || dependencies.message == nil || dependencies.message.MessageType != events.PaymentApprovedV1 {
+		t.Fatalf("saved=%#v message=%#v error=%v", repository.saved, dependencies.message, errorValue)
+	}
+}
+
+func (repository *paymentRepositoryFake) FindByOrderID(context.Context, string) (*domain.Payment, error) {
+	return nil, domain.ErrPaymentNotFound
 }
 
 type paymentGatewayFake struct {
