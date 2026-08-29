@@ -1,12 +1,24 @@
 SQLC_VERSION := 1.31.1
 
-.PHONY: run build test coverage vet check compose-up compose-down database-up migrate-up migrate-down sqlc sqlc-check demo
+.PHONY: run run-api run-payment build build-api build-payment test coverage vet check compose-up compose-down database-up payment-database-up migrate-up migrate-down sqlc sqlc-check demo
 
-run:
+run: run-api
+
+run-api:
 	go run ./cmd/api
 
-build:
-	go build -o ./bin/ecommerce ./cmd/api
+run-payment:
+	go run ./cmd/payment
+
+build: build-api build-payment
+
+build-api:
+	mkdir -p ./bin
+	go build -o ./bin/ecommerce-api ./cmd/api
+
+build-payment:
+	mkdir -p ./bin
+	go build -o ./bin/payment-service ./cmd/payment
 
 test:
 	go test -count=1 ./...
@@ -30,7 +42,10 @@ compose-down:
 	docker compose down
 
 database-up:
-	docker compose up -d postgresql
+	docker compose up -d ecommerce-postgresql rabbitmq
+
+payment-database-up:
+	docker compose up -d payment-postgresql rabbitmq
 
 migrate-up:
 	go run ./cmd/migrate -direction up
@@ -43,7 +58,7 @@ sqlc:
 	go run github.com/sqlc-dev/sqlc/cmd/sqlc@v$(SQLC_VERSION) -f sqlc-payment.yaml generate
 
 sqlc-check: sqlc
-	git diff --exit-code -- internal/platform/database/sqlc
+	git diff --exit-code -- internal/platform/database/sqlc internal/payment/platform/database/sqlc
 
 demo:
 	./scripts/http-flow.sh
