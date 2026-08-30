@@ -11,18 +11,22 @@ import (
 )
 
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil)).With("service", "payment-service")
 	slog.SetDefault(logger)
 
 	configuration, errorValue := paymentconfiguration.Load()
 	if errorValue != nil {
 		logger.Error("Payment service configuration could not be loaded.", "operation", "application.start", "result", "failed", "error", errorValue)
-		os.Exit(1)
+		return 1
 	}
 	application, errorValue := newApplication(configuration, logger)
 	if errorValue != nil {
 		logger.Error("Payment service could not be initialized.", "operation", "application.start", "result", "failed", "error", errorValue)
-		os.Exit(1)
+		return 1
 	}
 	defer func() {
 		if errorValue := application.Close(); errorValue != nil {
@@ -35,7 +39,8 @@ func main() {
 	logger.Info("Payment service is running.", "operation", "application.start", "result", "success", "address", application.server.Addr)
 	if errorValue := application.Run(applicationContext); errorValue != nil {
 		logger.Error("Payment service stopped unexpectedly.", "operation", "application.stop", "result", "failed", "error", errorValue)
-		os.Exit(1)
+		return 1
 	}
 	logger.Info("Payment service stopped.", "operation", "application.stop", "result", "success")
+	return 0
 }
