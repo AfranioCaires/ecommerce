@@ -1,167 +1,212 @@
-# Mini E-commerce em Go
+# Mini E-commerce distribuído em Go
 
-API HTTP de um mini e-commerce construída como monólito modular com Go, `net/http`, PostgreSQL, `sqlc`, JWT e Docker.
+API de clientes, catálogo, estoque e pedidos integrada a um serviço de pagamentos independente. O projeto usa Go, `net/http`, PostgreSQL, `sqlc`, RabbitMQ, JWT, Docker Compose e uma Saga orquestrada com Outbox/Inbox.
 
-O projeto implementa autenticação de clientes, catálogo, estoque, pedidos, pagamentos simulados e checkout transacional. O schema é criado por migrations SQL versionadas; GORM e Gin não são utilizados.
+O checkout reserva estoque e cria um pedido `PENDING`. O pagamento acontece de forma assíncrona: a API inicia a Saga, o `payment-service` autoriza ou recusa a cobrança simulada e a API confirma o pedido ou compensa a reserva.
 
-## Requisitos
+## Arquitetura
+
+```mermaid
+flowchart LR
+    Client[Cliente HTTP] --> API[ecommerce-api :3000]
+    API --> EDB[(ecommerce PostgreSQL :5432)]
+    API -- payment.requested.v1 --> MQ[(RabbitMQ :5672)]
+    MQ -- payment.requested.v1 --> PAY[payment-service :3001]
+    PAY --> PDB[(payments PostgreSQL :5433)]
+    PAY -- payment.approved.v1<br/>payment.declined.v1 --> MQ
+    MQ -- resultado --> API
+```
+
+| Componente | Responsabilidade exclusiva |
+| --- | --- |
+| `ecommerce-api` | Clientes, autenticação, produtos, estoque, pedidos, estado da Saga e compensação. |
+| `payment-service` | Autorizar pagamentos simulados e persistir pagamentos. |
+| PostgreSQL `ecommerce` | Dados da API, `order_sagas`, Outbox e Inbox da API. |
+| PostgreSQL `payments` | `payments`, Outbox e Inbox do serviço de pagamentos. |
+| RabbitMQ | Transportar comandos e eventos duráveis entre os processos. |
+
+Cada serviço possui seu próprio schema e binário. O pagamento foi extraído porque tem ciclo de vida, disponibilidade e persistência próprios; a API não consulta tabelas do serviço de pagamento. Dentro de cada módulo, domínio e casos de uso não dependem de HTTP, SQL ou RabbitMQ: adaptadores externos implementam os contratos definidos pela aplicação.
+
+## Fluxo da Saga
+
+| Etapa | Pedido | Saga | Mensagem/ação | Falha e compensação |
+| --- | --- | --- | --- | --- |
+| Criar pedido | `PENDING` | — | Reserva estoque na transação local. | Rollback local se cliente, produto ou estoque for inválido. |
+| Solicitar pagamento | `PAYMENT_PENDING` | `PROCESSING` | API salva `payment.requested.v1` na Outbox. | Repetir `/pagar` retorna `409`; a Outbox tenta novamente. |
+| Aprovar | `PAYMENT_PENDING` | `PROCESSING` | Pagamento salva cobrança `APPROVED` e `payment.approved.v1`. | Entrega é repetida até confirmação. |
+| Concluir | `PAID` | `COMPLETED` | API consome o resultado aprovado. | Inbox ignora mensagens já processadas. |
+| Recusar | `PAYMENT_PENDING` | `PROCESSING` | Pagamento salva cobrança `DECLINED` e `payment.declined.v1`. | API devolve os itens ao estoque. |
+| Compensar | `CANCELED` | `COMPENSATED` | Atualiza pedido, estoque e Saga na mesma transação local. | Uma falha transitória provoca nova entrega. |
+
+O gateway é deliberadamente determinístico: valores cujo total em centavos termina em `13` (`amount_cents % 100 == 13`) são recusados; os demais são aprovados. Isso permite demonstrar ambos os caminhos sem um provedor externo.
+
+### Contratos de mensagens
+
+Toda mensagem usa um envelope versionado:
+
+```json
+{
+  "message_id": "uuid",
+  "message_type": "payment.requested.v1",
+  "saga_id": "uuid",
+  "correlation_id": "uuid",
+  "occurred_at": "2026-08-30T12:00:00Z",
+  "payload": {
+    "order_id": "uuid",
+    "amount_cents": 1013
+  }
+}
+```
+
+| Exchange | Routing key | Tipo |
+| --- | --- | --- |
+| `ecommerce.commands` | `payment.requested` | `payment.requested.v1` |
+| `ecommerce.events` | `payment.approved` | `payment.approved.v1` |
+| `ecommerce.events` | `payment.declined` | `payment.declined.v1` |
+
+As publicações são persistentes e aguardam confirmação do broker. Cada alteração de negócio e sua mensagem de saída são salvas na mesma transação por Outbox. Cada consumidor registra `message_id` em sua Inbox antes de aplicar efeitos, tornando o processamento idempotente sob entrega *at least once*. Falhas transitórias usam atraso exponencial limitado a um minuto; contratos inválidos ou mensagens acima de `MESSAGE_RETRY_LIMIT` seguem para a fila `.dead` correspondente.
+
+## Requisitos e início rápido
 
 - Go 1.26.2 ou compatível;
 - Docker com Docker Compose;
-- Make para os comandos padronizados.
+- Make, `curl` e um shell POSIX para a demonstração.
 
-O gerador `sqlc` é executado com versão fixada por `go run`, portanto não exige instalação global.
-
-## Configuração
-
-Crie o arquivo de ambiente a partir do exemplo:
+Suba todo o ambiente:
 
 ```bash
 cp .env.example .env
-```
-
-As principais variáveis são:
-
-```dotenv
-APPLICATION_PORT=3000
-APPLICATION_ENVIRONMENT=development
-POSTGRESQL_DATA_SOURCE=host=localhost port=5432 user=afraniocaires password=postgres dbname=ecommerce sslmode=disable
-JSON_WEB_TOKEN_SECRET=RED-DEAD-REDEMPTION-2
-JSON_WEB_TOKEN_ISSUER=afranio
-JSON_WEB_TOKEN_LIFETIME=15m
-```
-
-Troque o segredo JWT antes de usar a aplicação fora do ambiente local.
-
-## Execução
-
-Inicie o PostgreSQL e execute a API:
-
-```bash
-make database-up
-make run
-```
-
-A API aplica automaticamente todas as migrations pendentes antes de abrir o servidor em `http://localhost:3000`.
-
-Para executar tudo com Docker Compose:
-
-```bash
 make compose-up
-docker compose logs -f application
+docker compose ps
+make demo
 ```
 
-Para encerrar os serviços:
+Serviços disponíveis:
+
+- API e health: `http://localhost:3000/health`;
+- health do pagamento: `http://localhost:3001/health`;
+- RabbitMQ Management: `http://localhost:15672` (`guest`/`guest` apenas no ambiente local);
+- PostgreSQL da API: `localhost:5432`;
+- PostgreSQL de pagamentos: `localhost:5433`.
+
+Para encerrar sem remover os volumes:
 
 ```bash
 make compose-down
 ```
 
-## Migrations
+As duas aplicações aplicam automaticamente apenas as migrations do próprio banco durante a inicialização.
 
-As migrations reversíveis ficam em `internal/platform/database/migrations` e são incorporadas aos binários da API e do migrador.
+## Configuração
+
+| Variável | Padrão/função |
+| --- | --- |
+| `APPLICATION_PORT` | Porta da API, padrão `3000`. |
+| `APPLICATION_ENVIRONMENT` | Nome do ambiente da API. |
+| `POSTGRESQL_DATA_SOURCE` | DSN exclusivo do banco `ecommerce`. |
+| `PAYMENT_APPLICATION_PORT` | Porta de health do pagamento, padrão `3001`. |
+| `PAYMENT_POSTGRESQL_DATA_SOURCE` | DSN obrigatório e exclusivo do banco `payments`. |
+| `JSON_WEB_TOKEN_SECRET` | Segredo de assinatura; deve ser trocado fora do ambiente local. |
+| `JSON_WEB_TOKEN_ISSUER` | Emissor do JWT. |
+| `JSON_WEB_TOKEN_LIFETIME` | Duração do token, por exemplo `15m`. |
+| `RABBITMQ_URL` | URL AMQP usada pelos dois serviços. |
+| `RABBITMQ_COMMAND_EXCHANGE` | Exchange de comandos, padrão `ecommerce.commands`. |
+| `RABBITMQ_EVENT_EXCHANGE` | Exchange de eventos, padrão `ecommerce.events`. |
+| `RABBITMQ_PAYMENT_QUEUE` | Fila de solicitações, padrão `payment.requests`. |
+| `RABBITMQ_RESULT_QUEUE` | Fila de resultados, padrão `ecommerce.payment-results`. |
+| `OUTBOX_INTERVAL` | Intervalo de polling, padrão `250ms`. |
+| `OUTBOX_BATCH_SIZE` | Máximo de mensagens por lote, padrão `20`. |
+| `MESSAGE_RETRY_LIMIT` | Máximo de novas tentativas, padrão `5`. |
+| `SHUTDOWN_TIMEOUT` | Prazo de encerramento HTTP, padrão `5s`. |
+| `BASE_URL` | Sobrescreve a URL da API no script de demonstração. |
+| `PAYMENT_BASE_URL` | Sobrescreve a URL do health de pagamentos no script. |
+| `COVERAGE_MINIMUM` | Cobertura mínima, padrão `40.0`. |
+
+`PAYMENT_POSTGRESQL_DATA_SOURCE` e `RABBITMQ_URL` são obrigatórias no processo de pagamento. O arquivo `.env.example` contém valores somente para desenvolvimento local.
+
+## Desenvolvimento
 
 ```bash
-make migrate-up
-make migrate-down
+make run-api          # API, usando .env
+make run-payment      # serviço de pagamento, usando .env
+make build            # gera bin/ecommerce-api e bin/payment-service
+make test
+make vet
+make coverage         # falha abaixo de 40%
+make check            # sqlc, formatação, testes, vet e build
 ```
 
-A migration inicial cria:
+Para executar apenas a infraestrutura e iniciar os processos pelo Go:
 
-- `customers`, incluindo `password_hash`;
-- `products` e `stocks`;
-- `orders`, `order_items` e `payments`;
-- chaves estrangeiras entre clientes, pedidos, itens, produtos, estoque e pagamentos;
-- índices usados pelas consultas paginadas.
+```bash
+make database-up
+make payment-database-up
+make run-api
+# em outro terminal
+make run-payment
+```
 
-## sqlc
-
-As queries SQL ficam em `internal/platform/database/queries`. Para regenerar os arquivos Go tipados:
+Queries ficam em `internal/platform/database/queries` e `internal/payment/platform/database/queries`. A geração é fixada no `sqlc` 1.31.1:
 
 ```bash
 make sqlc
-```
-
-Para regenerar e falhar caso o resultado não esteja versionado:
-
-```bash
 make sqlc-check
 ```
 
-Os repositories em `adapter/repository/sqlc` usam somente as queries geradas. O checkout compartilha uma `sql.Tx` entre catálogo, estoque, pedido e pagamento; qualquer erro causa rollback.
+O migrador manual `make migrate-up`/`make migrate-down` atua no banco da API; o schema de pagamentos é migrado pelo próprio `payment-service`.
 
-## Testes e cobertura
+## Demonstração e observabilidade
 
-```bash
-make test
-make coverage
-make vet
-make check
-```
+`make demo` cria dois produtos e dois pedidos. Um total de `1000` chega a `PAID`; outro de `1013` chega a `CANCELED`. O script consulta o PostgreSQL da API para confirmar que o estoque recusado foi restaurado, além de validar conflitos `409`, recurso ausente `404`, JSON inválido `400` e paginação.
 
-`make coverage` mede statements globalmente com `-coverpkg=./...` e falha abaixo de 40%. Os testes cobrem domínio, casos de uso, SQL/repositories, transações, estoque, handlers, rotas, configuração e banco.
-
-## Demonstração HTTP
-
-Com a aplicação e o PostgreSQL do Compose em execução:
+Os processos escrevem um objeto JSON por linha com `service`, `operation`, `result` e identificadores seguros. Para seguir uma Saga nos dois serviços:
 
 ```bash
-make demo
+CORRELATION_ID="valor-retornado-por-/pagar"
+docker compose logs ecommerce-api payment-service | grep "$CORRELATION_ID"
 ```
 
-O script demonstra health check, cadastro, login, criação de produto, definição de estoque, checkout e listagem com `limit`/`offset`. Também mostra respostas de erro para acesso sem token, JSON inválido e estoque insuficiente.
+Corpos de mensagens, senhas, hashes, tokens e DSNs não são registrados.
 
-## Build
+## Rotas
 
-```bash
-make build
-```
+As rotas do desafio são públicas e usam os nomes pedidos pelo enunciado:
 
-O executável é criado em `bin/ecommerce`.
-
-## Rotas principais
-
-| Método | Rota | Acesso |
+| Método | Rota | Resultado principal |
 | --- | --- | --- |
-| `GET` | `/health` | Público |
-| `POST` | `/api/authentication/register` | Público |
-| `POST` | `/api/authentication/login` | Público |
-| `GET` | `/api/products` | Público |
-| `GET` | `/api/products/{productID}` | Público |
-| `POST` | `/api/products` | Administrador |
-| `PUT` | `/api/inventory/{productID}` | Administrador |
-| `POST` | `/api/orders` | Autenticado |
-| `GET` | `/api/orders?limit=20&offset=0` | Autenticado |
-| `GET` | `/api/orders/{orderID}` | Autenticado |
+| `POST` | `/clientes` | Cria cliente (`password` ou o alias `passwordHash`). |
+| `GET` | `/clientes` | Lista clientes sem hashes. |
+| `GET` | `/clientes/{customerID}` | Consulta cliente. |
+| `POST` | `/produtos` | Cria produto. |
+| `GET` | `/produtos` | Lista produtos. |
+| `GET` | `/produtos/{productID}` | Consulta produto. |
+| `POST` | `/pedidos` | Reserva estoque e cria pedido `PENDING`. |
+| `GET` | `/pedidos?limit=20&offset=0` | Lista pedidos. |
+| `GET` | `/pedidos/{orderID}` | Consulta o pedido e seu status atual. |
+| `POST` | `/pedidos/{orderID}/pagar` | Inicia a Saga e retorna `202`. |
+| `POST` | `/pedidos/{orderID}/cancelar` | Cancela pedido elegível e libera estoque. |
 
-Rotas protegidas recebem o token no cabeçalho:
+O campo de entrada `passwordHash` existe somente por compatibilidade com o desafio: seu valor ainda é tratado como senha e transformado em bcrypt no servidor. Nenhum hash é retornado pela API.
+
+As rotas originais `/api/authentication`, `/api/products`, `/api/inventory` e `/api/orders` continuam disponíveis. Operações protegidas recebem:
 
 ```http
 Authorization: Bearer ACCESS_TOKEN
 ```
 
-Durante o desenvolvimento, um cliente pode ser promovido a administrador diretamente no PostgreSQL:
-
-```sql
-UPDATE customers
-SET roles = 'CUSTOMER,ADMIN'
-WHERE email = 'administrator@example.com';
-```
-
-Faça login novamente para emitir um token com os papéis atualizados.
-
 ## Estrutura
 
 ```text
-cmd/api/                                  bootstrap e roteador net/http
-cmd/migrate/                              executável de migrations
-internal/*/domain/                        entidades e regras de domínio
-internal/*/usecase/                       serviços e casos de uso
-internal/*/adapter/http/                  handlers HTTP
-internal/*/adapter/repository/sqlc/       repositories SQL
-internal/platform/database/migrations/    migrations up/down
-internal/platform/database/queries/       queries consumidas pelo sqlc
-internal/platform/database/sqlc/          código Go gerado
-internal/platform/transaction/            transações compartilhadas
-scripts/http-flow.sh                      fluxo feliz e erros via HTTP
+cmd/api/                                      composição e HTTP da API
+cmd/payment/                                  processo independente de pagamentos
+internal/*/domain/                            entidades e transições
+internal/*/usecase/                           casos de uso e portas
+internal/*/adapter/http/                      transporte HTTP
+internal/*/adapter/messaging/                 consumidores de eventos
+internal/*/adapter/repository/sqlc/           persistência da API
+internal/payment/platform/database/           schema e sqlc exclusivos de pagamentos
+internal/platform/events/                     envelopes e contratos versionados
+internal/platform/messaging/                  RabbitMQ, retry e dead letter
+internal/platform/outbox/ e inbox/            garantias de entrega e idempotência
+scripts/http-flow.sh                           demonstração ponta a ponta
 ```
